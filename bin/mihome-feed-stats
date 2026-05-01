@@ -1,0 +1,15 @@
+#!/bin/sh
+ENV_FILE="$HOME/.config/mihome/feeder.env"
+SHARE_DIR="$HOME/.local/share/mihome-tools"
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Missing env file: $ENV_FILE" >&2
+  exit 1
+fi
+
+set -a
+. "$ENV_FILE"
+set +a
+
+export PYTHONPATH="$SHARE_DIR${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m mihome_feeder.cli_stats "$@"
