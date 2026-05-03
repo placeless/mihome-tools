@@ -7,6 +7,15 @@ from .cloud import post_json
 from .config import AppConfig
 
 
+def validate_portions(portions: int, max_portions: int):
+    if portions < 1:
+        raise ValueError("portions must be at least 1")
+    if portions > max_portions:
+        raise ValueError(
+            f"portions must not exceed {max_portions} per request"
+        )
+
+
 def build_payload(cfg: AppConfig, portions: int):
     if cfg.feed_siid is None or cfg.feed_aiid is None:
         raise RuntimeError(
@@ -43,7 +52,12 @@ def is_ok_response(resp_json):
 
 def main():
     parser = argparse.ArgumentParser(description="Trigger Xiaomi feeder action")
-    parser.add_argument("portions", nargs="?", type=int, help="number of portions")
+    parser.add_argument(
+        "portions",
+        nargs="?",
+        type=int,
+        help="number of portions (must be within configured limit)",
+    )
     parser.add_argument("--debug", action="store_true", help="enable debug output")
     parser.add_argument("--json", action="store_true", help="print full response json")
     args = parser.parse_args()
@@ -56,6 +70,10 @@ def main():
     )
     cfg = AppConfig.from_env()
     portions = args.portions if args.portions is not None else cfg.feed_default_portions
+    try:
+        validate_portions(portions, cfg.feed_max_portions)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     payload = build_payload(cfg, portions)
     resp_json = post_json(cfg.feed_url, payload, cfg, debug=debug)

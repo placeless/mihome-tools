@@ -17,6 +17,13 @@ def _optional_int(name: str, default: Optional[int] = None) -> Optional[int]:
     return int(value)
 
 
+def _positive_int(name: str, default: int) -> int:
+    value = _optional_int(name, default)
+    if value is None or value < 1:
+        raise RuntimeError(f"Environment variable {name} must be a positive integer")
+    return value
+
+
 @dataclass(frozen=True)
 class AppConfig:
     ssecurity: str
@@ -41,11 +48,18 @@ class AppConfig:
     feed_aiid: Optional[int]
     feed_action_did: Optional[str]
     feed_default_portions: int
+    feed_max_portions: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
         user_id = _require("MIHOME_USER_ID")
         passport_device_id = _require("MIHOME_PASSPORT_DEVICE_ID")
+        feed_max_portions = _positive_int("MIHOME_FEED_MAX_PORTIONS", 4)
+        feed_default_portions = _positive_int("MIHOME_FEED_DEFAULT_PORTIONS", 1)
+        if feed_default_portions > feed_max_portions:
+            raise RuntimeError(
+                "MIHOME_FEED_DEFAULT_PORTIONS cannot be greater than MIHOME_FEED_MAX_PORTIONS"
+            )
         app_version = os.environ.get("MIHOME_APP_VERSION", "11.3.203")
         platform_version = os.environ.get("MIHOME_PLATFORM_VERSION", "18.7")
         user_agent = os.environ.get(
@@ -81,5 +95,6 @@ class AppConfig:
             feed_siid=_optional_int("MIHOME_FEED_SIID"),
             feed_aiid=_optional_int("MIHOME_FEED_AIID"),
             feed_action_did=os.environ.get("MIHOME_FEED_ACTION_DID"),
-            feed_default_portions=_optional_int("MIHOME_FEED_DEFAULT_PORTIONS", 1) or 1,
+            feed_default_portions=feed_default_portions,
+            feed_max_portions=feed_max_portions,
         )

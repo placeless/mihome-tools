@@ -82,6 +82,7 @@ export MIHOME_FEED_URL='https://de.core.api.io.mi.com/app/miotspec/action'
 export MIHOME_FEED_SIID='your_siid'
 export MIHOME_FEED_AIID='your_aiid'
 export MIHOME_FEED_DEFAULT_PORTIONS='1'
+export MIHOME_FEED_MAX_PORTIONS='4'
 
 # Feed stats endpoint
 export MIHOME_FEED_STATS_URL='https://de.api.io.mi.com/app/user/get_user_device_data'
@@ -91,6 +92,7 @@ Notes:
 
 - `MIHOME_YAST` can be the same as `MIHOME_SERVICE_TOKEN` if that is what your session uses.
 - `MIHOME_FEED_STATS_URL` is intentionally different from `MIHOME_FEED_URL`.
+- `MIHOME_FEED_MAX_PORTIONS` defaults to `4`; feed requests above this value are rejected locally before calling the Mi Home API.
 - Feed stats for this feeder were verified against:
   - host: `de.api.io.mi.com`
   - path: `/app/user/get_user_device_data`
@@ -149,6 +151,13 @@ Feed two portions:
 
 ```bash
 mihome-feed 2
+```
+
+Feed requests above the configured limit fail fast locally:
+
+```bash
+mihome-feed 1000
+# error: portions must not exceed 4 per request
 ```
 
 Query stats with defaults:
