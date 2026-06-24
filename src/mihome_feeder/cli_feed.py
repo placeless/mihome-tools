@@ -2,18 +2,18 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
-from .cloud import post_json
+from .cloud import MiHomeRequestError, post_json
 from .config import AppConfig
+from .env import default_env_file, load_env_file
 
 
 def validate_portions(portions: int, max_portions: int):
     if portions < 1:
         raise ValueError("portions must be at least 1")
     if portions > max_portions:
-        raise ValueError(
-            f"portions must not exceed {max_portions} per request"
-        )
+        raise ValueError(f"portions must not exceed {max_portions} per request")
 
 
 def build_payload(cfg: AppConfig, portions: int):
@@ -60,6 +60,12 @@ def main():
     )
     parser.add_argument("--debug", action="store_true", help="enable debug output")
     parser.add_argument("--json", action="store_true", help="print full response json")
+    parser.add_argument(
+        "--env-file",
+        type=str,
+        default=str(default_env_file()),
+        help="environment file to load",
+    )
     args = parser.parse_args()
 
     debug = args.debug or os.environ.get("MIHOME_DEBUG", "").lower() in (
@@ -68,27 +74,35 @@ def main():
         "yes",
         "on",
     )
-    cfg = AppConfig.from_env()
+    try:
+        load_env_file(Path(args.env_file))
+        cfg = AppConfig.from_env()
+    except (RuntimeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     portions = args.portions if args.portions is not None else cfg.feed_default_portions
     try:
         validate_portions(portions, cfg.feed_max_portions)
     except ValueError as exc:
         parser.error(str(exc))
 
-    payload = build_payload(cfg, portions)
-    resp_json = post_json(cfg.feed_url, payload, cfg, debug=debug)
+    try:
+        payload = build_payload(cfg, portions)
+        resp_json = post_json(cfg.feed_url, payload, cfg, debug=debug)
+    except (MiHomeRequestError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
-    if args.json or debug:
+    ok = is_ok_response(resp_json)
+    if args.json:
         print(json.dumps(resp_json, ensure_ascii=False, indent=2))
-        return
-
-    if is_ok_response(resp_json):
+    elif ok:
         print("ok")
-        return
-
-    print(json.dumps(resp_json, ensure_ascii=False, indent=2))
-    sys.exit(1)
+    else:
+        print(json.dumps(resp_json, ensure_ascii=False, indent=2))
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

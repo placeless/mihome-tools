@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible mihome-tools problem
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include Xiaomi credentials, account IDs, device IDs, DIDs,
+        access keys, proxy captures, or unreviewed `--json` output.
+
+  - type: input
+    id: version
+    attributes:
+      label: mihome-tools version or commit
+      placeholder: 0.2.0 or a commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15 / Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Redact all account and device data before pasting output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true

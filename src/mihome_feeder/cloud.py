@@ -7,12 +7,43 @@ import urllib.request
 from .config import AppConfig
 from .crypto import (
     decrypt_rc4_raw,
-    decrypt_rc4_text,
     encrypt_rc4,
     generate_enc_signature,
     generate_nonce,
     signed_nonce,
 )
+
+
+class MiHomeRequestError(RuntimeError):
+    """Raised when a Mi Home API request cannot be completed."""
+
+
+class MiHomeAuthenticationError(MiHomeRequestError):
+    """Raised when Xiaomi rejects the configured cloud session."""
+
+
+_SENSITIVE_KEYS = {
+    "accesskey",
+    "deviceid",
+    "did",
+    "passportdeviceid",
+    "servicetoken",
+    "ssecurity",
+    "uid",
+    "userid",
+    "yetanotherservicetoken",
+}
+
+
+def redact_data(value):
+    if isinstance(value, dict):
+        return {
+            key: "<redacted>" if key.lower() in _SENSITIVE_KEYS else redact_data(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_data(item) for item in value]
+    return value
 
 
 def build_headers(url: str, cfg: AppConfig) -> dict:
@@ -96,25 +127,40 @@ def parse_response_text(
 
     decrypted = plain.decode("utf-8", errors="replace")
     if debug:
-        print("DECRYPTED RESPONSE PREVIEW:", repr(decrypted[:500]))
+        print("DECRYPTED RESPONSE LENGTH:", len(decrypted))
     return json.loads(decrypted)
 
 
-def post_json(url: str, payload: dict, cfg: AppConfig, debug: bool = False):
-    body_dict, payload_str, s_nonce = build_encrypted_body(url, payload, cfg)
-    body = urllib.parse.urlencode(body_dict).encode()
-    headers = build_headers(url, cfg)
-
-    if debug:
-        print("API_URL:", url)
-        print("REQUEST PAYLOAD:", payload_str)
-        print("POST BODY:", urllib.parse.urlencode(body_dict))
-        print("DECRYPT DATA:", decrypt_rc4_text(s_nonce, body_dict["data"]))
-        print("DECRYPT RC4_HASH__:", decrypt_rc4_text(s_nonce, body_dict["rc4_hash__"]))
-
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-
+def _error_message(raw: str) -> str:
     try:
+        error_json = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(error_json, dict):
+        return ""
+    message = error_json.get("message")
+    return str(message) if message else ""
+
+
+def post_json(url: str, payload: dict, cfg: AppConfig, debug: bool = False):
+    try:
+        body_dict, _payload_str, s_nonce = build_encrypted_body(url, payload, cfg)
+        body = urllib.parse.urlencode(body_dict).encode()
+        headers = build_headers(url, cfg)
+
+        if debug:
+            print("API_URL:", url)
+            print(
+                "REQUEST PAYLOAD:",
+                json.dumps(
+                    redact_data(payload),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            )
+            print("POST FIELDS:", ", ".join(body_dict))
+
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=20) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             miot_encoding = resp.headers.get("miot-content-encoding")
@@ -124,13 +170,38 @@ def post_json(url: str, payload: dict, cfg: AppConfig, debug: bool = False):
                 print("CONTENT-TYPE:", resp.headers.get("Content-Type"))
                 print("MIOT-CONTENT-ENCODING:", miot_encoding)
                 print("RAW LENGTH:", len(raw))
-                print("RAW PREVIEW:", repr(raw[:200]))
 
-        return parse_response_text(raw, miot_encoding, s_nonce, debug=debug)
+        response = parse_response_text(raw, miot_encoding, s_nonce, debug=debug)
+        if debug:
+            response_code = response.get("code") if isinstance(response, dict) else None
+            print("RESPONSE TYPE:", type(response).__name__)
+            print("RESPONSE CODE:", response_code)
+        return response
 
     except urllib.error.HTTPError as e:
         err = e.read().decode("utf-8", errors="replace")
         if debug:
             print("HTTP STATUS:", e.code)
-            print("ERROR PREVIEW:", repr(err[:500]))
-        raise
+            print("ERROR LENGTH:", len(err))
+        if e.code == 401:
+            try:
+                error_json = json.loads(err)
+            except json.JSONDecodeError:
+                error_json = {}
+            if error_json.get("code") == 3 or "auth error" in err.lower():
+                raise MiHomeAuthenticationError(
+                    "Mi Home session expired or was revoked. Run mihome-login "
+                    "to refresh MIHOME_SSECURITY and MIHOME_SERVICE_TOKEN."
+                ) from None
+        message = _error_message(err)
+        detail = f": {message}" if message else ""
+        raise MiHomeRequestError(
+            f"Mi Home API returned HTTP {e.code}{detail}"
+        ) from None
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise MiHomeRequestError(f"Could not reach Mi Home API: {reason}") from None
+    except (IndexError, OSError, ValueError) as exc:
+        raise MiHomeRequestError(
+            f"Invalid Mi Home request or response: {exc}"
+        ) from None

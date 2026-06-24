@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 
 def _require(name: str) -> str:
@@ -10,7 +9,7 @@ def _require(name: str) -> str:
     return value
 
 
-def _optional_int(name: str, default: Optional[int] = None) -> Optional[int]:
+def _optional_int(name: str, default: int | None = None) -> int | None:
     value = os.environ.get(name)
     if value is None or value == "":
         return default
@@ -44,9 +43,9 @@ class AppConfig:
     feed_url: str
     feed_stats_url: str
 
-    feed_siid: Optional[int]
-    feed_aiid: Optional[int]
-    feed_action_did: Optional[str]
+    feed_siid: int | None
+    feed_aiid: int | None
+    feed_action_did: str | None
     feed_default_portions: int
     feed_max_portions: int
 
@@ -58,7 +57,8 @@ class AppConfig:
         feed_default_portions = _positive_int("MIHOME_FEED_DEFAULT_PORTIONS", 1)
         if feed_default_portions > feed_max_portions:
             raise RuntimeError(
-                "MIHOME_FEED_DEFAULT_PORTIONS cannot be greater than MIHOME_FEED_MAX_PORTIONS"
+                "MIHOME_FEED_DEFAULT_PORTIONS cannot be greater than "
+                "MIHOME_FEED_MAX_PORTIONS"
             )
         app_version = os.environ.get("MIHOME_APP_VERSION", "11.3.203")
         platform_version = os.environ.get("MIHOME_PLATFORM_VERSION", "18.7")
