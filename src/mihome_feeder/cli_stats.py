@@ -4,9 +4,11 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from .cloud import post_json
+from .cloud import MiHomeRequestError, post_json
 from .config import AppConfig
+from .env import default_env_file, load_env_file
 
 
 def parse_portions(value):
@@ -27,7 +29,7 @@ def summarize_records(records):
     tz = datetime.now().astimezone().tzinfo
     now = datetime.now(tz)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    week_start = today_start - timedelta(days=7)
+    week_start = today_start - timedelta(days=6)
     month_start = today_start.replace(day=1)
 
     total_today = 0
@@ -94,6 +96,12 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="print full response json")
     parser.add_argument("--debug", action="store_true", help="enable debug output")
+    parser.add_argument(
+        "--env-file",
+        type=str,
+        default=str(default_env_file()),
+        help="environment file to load",
+    )
     args = parser.parse_args()
 
     debug = args.debug or os.environ.get("MIHOME_DEBUG", "").lower() in (
@@ -102,16 +110,44 @@ def main():
         "yes",
         "on",
     )
-    cfg = AppConfig.from_env()
+    if args.days < 0:
+        parser.error("days must be zero or greater")
+    if args.limit < 1:
+        parser.error("limit must be at least 1")
+
+    try:
+        load_env_file(Path(args.env_file))
+        cfg = AppConfig.from_env()
+    except (RuntimeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     payload = build_payload(cfg, args.days, args.limit)
-    resp_json = post_json(cfg.feed_stats_url, payload, cfg, debug=debug)
+    try:
+        resp_json = post_json(cfg.feed_stats_url, payload, cfg, debug=debug)
+    except MiHomeRequestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    result = resp_json.get("result") if isinstance(resp_json, dict) else None
+    response_ok = (
+        isinstance(resp_json, dict)
+        and resp_json.get("code") == 0
+        and isinstance(result, list)
+    )
 
     if args.json:
         print(json.dumps(resp_json, ensure_ascii=False, indent=2))
-        return
+    if not response_ok:
+        if not args.json:
+            print(
+                "error: Mi Home stats API returned an unsuccessful response",
+                file=sys.stderr,
+            )
+            print(json.dumps(resp_json, ensure_ascii=False, indent=2), file=sys.stderr)
+        return 1
 
-    result = resp_json.get("result") if isinstance(resp_json, dict) else None
-    records = result if isinstance(result, list) else []
+    records = result
 
     if debug:
         print("")
@@ -119,7 +155,8 @@ def main():
 
     if len(records) >= args.limit:
         print(
-            f"warning: result count reached limit={args.limit}, history may be truncated",
+            f"warning: result count reached limit={args.limit}, "
+            "history may be truncated",
             file=sys.stderr,
         )
 
@@ -141,4 +178,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

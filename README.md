@@ -1,66 +1,67 @@
 # mihome-tools
 
-A small personal toolkit for controlling a Xiaomi pet feeder and querying feed history from Mi Home cloud APIs.
+Command-line tools for triggering a Xiaomi Mi Home pet feeder and summarizing
+its feed history.
+
+> [!IMPORTANT]
+> This is an unofficial community project. It is not affiliated with or
+> endorsed by Xiaomi. It uses private Mi Home cloud APIs that may change
+> without notice.
 
 ## Features
 
-- Trigger feeder actions from the command line.
-- Query feed history and aggregate totals for today, last 7 days, current month, and daily totals.
-- Keep development sources in your project directory.
-- Install runnable artifacts into user-local paths:
-  - `~/.local/bin/`
-  - `~/.local/share/mihome-tools/`
+- Trigger a configured feeder action with a local portion limit.
+- Query feed events and summarize today, yesterday, the last seven calendar
+  days, the current month, and daily totals.
+- Refresh an expired Xiaomi cloud session through Xiaomi account login.
+- Install isolated commands with locked Python dependencies.
+- Redact account and device identifiers from debug output.
 
-## Project layout
-
-```text
-mihome-tools/
-├── Makefile
-├── README.md
-├── bin/
-│   ├── mihome-feed
-│   └── mihome-feed-stats
-└── src/
-    └── mihome_feeder/
-        ├── __init__.py
-        ├── __main__.py
-        ├── cli_feed.py
-        ├── cli_stats.py
-        ├── cloud.py
-        ├── config.py
-        └── crypto.py
-```
+The current event parser is tailored to a feeder whose portion count appears
+as MIoT property `piid: 4` in event key `4.2`. Other feeder models may require
+code or configuration changes.
 
 ## Requirements
 
 - macOS or Linux
-- Python 3.9+
-- A working Mi Home account session and extracted credentials
-- `~/.local/bin` in your `PATH`
+- Python 3.10 or newer
+- [`uv`](https://docs.astral.sh/uv/)
+- A Xiaomi account containing the feeder
+- Device-specific MIoT identifiers and `accessKey`
 
-Check whether `~/.local/bin` is already in `PATH`:
-
-```bash
-echo "$PATH"
-```
-
-If needed, add this to your shell profile:
+## Install
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+git clone https://github.com/placeless/mihome-tools.git
+cd mihome-tools
+make install
 ```
 
-## Environment file
+This installs three isolated commands through `uv tool`:
 
-If you do not already have these values, you can capture Mi Home app requests using tools like `mitmproxy` (or similar HTTP proxy/debug tools) and extract the required session/device fields for `feeder.env`. This project does not cover packet-capture setup details; research the workflow that matches your device and network environment.
+- `mihome-feed`
+- `mihome-feed-stats`
+- `mihome-login`
 
-Create:
+Make sure the user executable directory reported by `uv tool dir --bin` is in
+your `PATH`.
 
-```text
-~/.config/mihome/feeder.env
+To upgrade an existing local checkout:
+
+```bash
+git pull --ff-only
+make install
 ```
 
-Example:
+To uninstall:
+
+```bash
+make uninstall
+```
+
+## Configuration
+
+Create `~/.config/mihome/feeder.env`:
 
 ```bash
 export MIHOME_SSECURITY='your_ssecurity'
@@ -77,67 +78,54 @@ export MIHOME_LANGUAGE='ZH_CN'
 export MIHOME_APP_VERSION='11.3.203'
 export MIHOME_PLATFORM_VERSION='18.7'
 
-# Feed action endpoint
 export MIHOME_FEED_URL='https://de.core.api.io.mi.com/app/miotspec/action'
+export MIHOME_FEED_STATS_URL='https://de.api.io.mi.com/app/user/get_user_device_data'
 export MIHOME_FEED_SIID='your_siid'
 export MIHOME_FEED_AIID='your_aiid'
 export MIHOME_FEED_DEFAULT_PORTIONS='1'
-
-# Feed stats endpoint
-export MIHOME_FEED_STATS_URL='https://de.api.io.mi.com/app/user/get_user_device_data'
+export MIHOME_FEED_MAX_PORTIONS='4'
 ```
 
-Notes:
-
-- `MIHOME_YAST` can be the same as `MIHOME_SERVICE_TOKEN` if that is what your session uses.
-- `MIHOME_FEED_STATS_URL` is intentionally different from `MIHOME_FEED_URL`.
-- Feed stats for this feeder were verified against:
-  - host: `de.api.io.mi.com`
-  - path: `/app/user/get_user_device_data`
-  - payload key: `"4.2"`
-  - type: `"event"`
-  - group: `"raw"`
-
-## Install
-
-From the project root:
+Protect the file:
 
 ```bash
-cd ~/Developer/projects/mihome-tools
-make install
+chmod 600 ~/.config/mihome/feeder.env
 ```
 
-This installs:
+Only simple `KEY='value'` or `export KEY='value'` assignments are supported.
+The file is parsed as data and is not executed as a shell script. Existing
+process environment variables take precedence over values in the file.
 
-- `~/.local/bin/mihome-feed`
-- `~/.local/bin/mihome-feed-stats`
-- `~/.local/share/mihome-tools/mihome_feeder/...`
+Set `MIHOME_ENV_FILE` or pass `--env-file` to use a different location.
 
-## Reinstall after code changes
+For first-time setup, the five session variables at the top may be omitted.
+After the device ID, DID, and access key are present, `mihome-login` will
+create and append a matching session.
+
+### Obtaining device values
+
+The session values can be created or refreshed with:
 
 ```bash
-make reinstall
+mihome-login
 ```
 
-## Uninstall
+The command uses the pinned
+[`migate`](https://github.com/offici5l/migate) authentication library and the
+Xiaomi `xiaomiio` service. It:
 
-```bash
-make uninstall
-```
+1. opens Xiaomi account login;
+2. verifies that the account matches `MIHOME_USER_ID`;
+3. verifies the new session against the configured stats endpoint;
+4. atomically updates the session values in `feeder.env`;
+5. keeps a timestamped backup of the previous file.
 
-## Development usage
+The remaining device-specific values—such as `MIHOME_DID`,
+`MIHOME_ACCESS_KEY`, `MIHOME_FEED_SIID`, and `MIHOME_FEED_AIID`—must come from
+your device configuration or a request captured from your own Mi Home app.
+Never publish captured requests or credentials.
 
-Run directly from the source tree without installing:
-
-```bash
-make run-feed ARGS="1"
-make run-stats
-make run-stats ARGS="30 2000 --debug"
-```
-
-These commands load `~/.config/mihome/feeder.env` and run the source package with `PYTHONPATH=src`.
-
-## Installed usage
+## Usage
 
 Feed one portion:
 
@@ -151,161 +139,132 @@ Feed two portions:
 mihome-feed 2
 ```
 
-Query stats with defaults:
+Requests above `MIHOME_FEED_MAX_PORTIONS` are rejected locally:
+
+```console
+$ mihome-feed 1000
+usage: mihome-feed [-h] [--debug] [--json] [--env-file ENV_FILE] [portions]
+mihome-feed: error: portions must not exceed 4 per request
+```
+
+Query the last seven days:
 
 ```bash
 mihome-feed-stats
 ```
 
-Query last 30 days with a higher limit:
+Query a larger window and include daily totals:
 
 ```bash
-mihome-feed-stats 30 2000
+mihome-feed-stats 30 2000 --full
 ```
 
-Get raw JSON response:
+Example output:
+
+```text
+today: 3, 15g
+yesterday: 5, 25g
+feed_week:  31
+feed_month: 82
+
+daily:
+  2026-06-23: 5
+  2026-06-24: 3
+```
+
+Print the raw API response:
 
 ```bash
 mihome-feed-stats 30 1000 --json
 ```
 
-Enable debug output:
+Enable safe diagnostic output:
 
 ```bash
-MIHOME_DEBUG=1 mihome-feed-stats 30 1000
+mihome-feed-stats 30 1000 --debug
 ```
 
-## Output format
+`--debug` redacts account IDs, device IDs, and access keys. `--json` prints raw
+Mi Home data and may contain private information; review it before sharing.
 
-Typical stats output:
+## Exit status
 
-```text
-feed_today: 20
-feed_week:  313
-feed_month: 1141
+- `0`: operation succeeded
+- `1`: Mi Home returned an unsuccessful business response
+- `2`: configuration, authentication, network, or protocol failure
+- `130`: interactive login was cancelled
 
-daily:
-  2026-03-19: 17
-  2026-03-20: 38
-  2026-03-21: 40
-```
-
-## How feed stats are derived
-
-The feed history request queries Mi Home cloud event records and aggregates the feeder event payloads.
-
-For this feeder, the verified request shape is:
-
-- `key: "4.2"`
-- `group: "raw"`
-- `type: "event"`
-- includes `accessKey`
-
-Each event record contains a `value` JSON array. The feeder portion count is taken from the item where:
-
-```json
-{"piid": 4, "value": N}
-```
-
-The script sums those values by day and also computes:
-
-- today
-- last 7 days
-- current month
+This makes the commands safe to use from scripts and automations.
 
 ## Troubleshooting
 
-### 1. `Missing env file`
+### HTTP 401 or `code: 3, message: auth error`
 
-Make sure this file exists:
-
-```text
-~/.config/mihome/feeder.env
-```
-
-### 2. `Missing required environment variable`
-
-Open `feeder.env` and verify the missing variable is defined and exported.
-
-### 3. Command not found
-
-Make sure `~/.local/bin` is in `PATH`:
+The configured cloud session expired or was revoked:
 
 ```bash
-echo "$PATH"
+mihome-login
 ```
 
-If not, add it to your shell profile and restart the shell.
+### Missing or insecure environment file
 
-### 4. Feed stats returns empty results
-
-Check:
-
-- `MIHOME_FEED_STATS_URL` is `https://de.api.io.mi.com/app/user/get_user_device_data`
-- the payload uses `key: "4.2"`
-- `accessKey` is present
-- the correct `did` is used
-- your time window and limit are large enough
-
-Useful debug command:
+Create the file at the configured path and restrict it:
 
 ```bash
-MIHOME_DEBUG=1 mihome-feed-stats 30 1000
+chmod 600 ~/.config/mihome/feeder.env
 ```
 
-### 5. Stats look truncated
+### Empty or truncated history
 
-If you see a warning like:
+- Confirm `MIHOME_DID`, `MIHOME_ACCESS_KEY`, and event key `4.2`.
+- Increase the requested day window and result limit.
+- If the result count reaches the limit, rerun with a larger limit.
 
-```text
-warning: result count reached limit=1000, history may be truncated
-```
+### Feed action fails
 
-rerun with a higher limit:
+Confirm the action endpoint, `SIID`, `AIID`, action device ID, and expected
+input shape for your exact feeder model.
+
+## Development
+
+Install the locked development environment:
 
 ```bash
-mihome-feed-stats 60 3000
+uv sync --locked --all-groups
 ```
 
-### 6. Feed action fails
-
-Check:
-
-- `MIHOME_FEED_URL`
-- `MIHOME_FEED_SIID`
-- `MIHOME_FEED_AIID`
-- whether the action endpoint and stats endpoint are intentionally different hosts
-
-### 7. Need to inspect raw response
-
-Use:
+Run all checks:
 
 ```bash
-mihome-feed-stats 30 1000 --json
+make check
 ```
 
-or:
+Run commands from the source checkout:
 
 ```bash
-MIHOME_DEBUG=1 mihome-feed-stats 30 1000
+make run-feed ARGS="1"
+make run-stats ARGS="30 1000 --full"
+make run-login
 ```
 
-## Upgrade workflow
-
-Typical update cycle:
+Regenerate dependency locks after an intentional dependency change:
 
 ```bash
-cd ~/Developer/projects/mihome-tools
-# edit source files
-make reinstall
-mihome-feed-stats 30 1000
+uv lock
+uv export --locked --no-dev --no-emit-project \
+  --format requirements-txt --output-file requirements.lock
 ```
 
-## Notes for future improvements
+CI tests Python 3.10, 3.12, and 3.14 and runs Ruff.
 
-Possible next steps:
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
-- add pagination for stats beyond the current limit
-- add CSV export
-- add per-meal time-of-day summaries
-- add tests for payload parsing and date aggregation
+## Security
+
+Read [SECURITY.md](SECURITY.md) before reporting a vulnerability or sharing
+diagnostics. Do not open public issues containing Xiaomi credentials, device
+identifiers, raw request captures, or unreviewed `--json` output.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

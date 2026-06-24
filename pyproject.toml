@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mihome-tools"
+version = "0.2.0"
+description = "CLI tools for a Xiaomi Mi Home pet feeder"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "placeless" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Home Automation",
+]
+dependencies = [
+  "migate==1.1.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/placeless/mihome-tools"
+Issues = "https://github.com/placeless/mihome-tools/issues"
+Source = "https://github.com/placeless/mihome-tools"
+
+[project.scripts]
+mihome-feed = "mihome_feeder.cli_feed:main"
+mihome-feed-stats = "mihome_feeder.cli_stats:main"
+mihome-login = "mihome_feeder.cli_login:main"
+
+[dependency-groups]
+dev = [
+  "ruff==0.15.18",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mihome_feeder"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

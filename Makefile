@@ -1,34 +1,43 @@
 SHELL := /bin/bash
 
-PREFIX := $(HOME)/.local
-BINDIR := $(PREFIX)/bin
-SHAREDIR := $(PREFIX)/share/mihome-tools
-PKGDIR := $(SHAREDIR)/mihome_feeder
-
 PROJECT_ROOT := $(CURDIR)
-SRC_ROOT := $(PROJECT_ROOT)/src
-BIN_ROOT := $(PROJECT_ROOT)/bin
 
-.PHONY: install uninstall reinstall run-feed run-stats
+.PHONY: sync install uninstall reinstall run-feed run-stats run-login
+.PHONY: test lint audit build check
 
-install:
-	mkdir -p "$(BINDIR)" "$(SHAREDIR)"
-	rm -rf "$(PKGDIR)"
-	cp -R "$(SRC_ROOT)/mihome_feeder" "$(PKGDIR)"
-	cp "$(BIN_ROOT)/mihome-feed" "$(BINDIR)/mihome-feed"
-	cp "$(BIN_ROOT)/mihome-feed-stats" "$(BINDIR)/mihome-feed-stats"
-	chmod +x "$(BINDIR)/mihome-feed" "$(BINDIR)/mihome-feed-stats"
+sync:
+	uv sync --locked --all-groups
+
+install: requirements.lock
+	uv tool install --force --constraints "$(PROJECT_ROOT)/requirements.lock" \
+		"$(PROJECT_ROOT)"
 
 uninstall:
-	rm -f "$(BINDIR)/mihome-feed" "$(BINDIR)/mihome-feed-stats"
-	rm -rf "$(PKGDIR)"
+	uv tool uninstall mihome-tools
 
-reinstall: uninstall install
+reinstall: install
 
-run-feed:
-	set -a; . "$$HOME/.config/mihome/feeder.env"; set +a; \
-	PYTHONPATH="$(SRC_ROOT)" python3 -m mihome_feeder.cli_feed $(ARGS)
+run-feed: sync
+	uv run --locked mihome-feed $(ARGS)
 
-run-stats:
-	set -a; . "$$HOME/.config/mihome/feeder.env"; set +a; \
-	PYTHONPATH="$(SRC_ROOT)" python3 -m mihome_feeder.cli_stats $(ARGS)
+run-stats: sync
+	uv run --locked mihome-feed-stats $(ARGS)
+
+run-login: sync
+	uv run --locked mihome-login $(ARGS)
+
+test: sync
+	uv run --locked python -m unittest discover -s tests -v
+
+lint: sync
+	uv run --locked ruff check src tests
+	uv run --locked ruff format --check src tests
+
+audit:
+	uv audit --locked
+
+build:
+	rm -rf dist
+	uv build --no-sources
+
+check: lint test audit build
