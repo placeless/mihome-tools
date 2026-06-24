@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27,<2"]
+requires = ["hatchling>=1.30.1,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -40,7 +40,7 @@ mihome-login = "mihome_feeder.cli_login:main"
 
 [dependency-groups]
 dev = [
-  "ruff==0.15.18",
+  "ruff==0.15.19",
 ]
 
 [tool.hatch.build.targets.wheel]
