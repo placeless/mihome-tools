@@ -28,6 +28,13 @@ class MiHomeAuthenticationError extends MiHomeError {
   }
 }
 
+class MiHomeResponseError extends MiHomeError {
+  constructor(message) {
+    super(message);
+    this.name = "MiHomeResponseError";
+  }
+}
+
 function normalizeConfig(config) {
   const normalized = Object.assign({}, DEFAULT_CONFIG, config || {});
   normalized.defaultPortions = Number(normalized.defaultPortions);
@@ -135,8 +142,10 @@ function buildHeaders(url, config) {
 
   return {
     "miot-encrypt-algorithm": "ENCRYPT-RC4",
+    "miot-accept-encoding": "GZIP",
     "content-type": "application/x-www-form-urlencoded",
     accept: "*/*",
+    "accept-encoding": "identity",
     "accept-language": "en-US;q=1, es-US;q=0.9, es;q=0.8, zh-Hans-US;q=0.7",
     "domain-refer": hostFromUrl(url),
     "origin-from": "MiHome",
@@ -253,13 +262,13 @@ function normalizeBase64Response(text) {
     .replace(/_/g, "/")
     .replace(/=+$/, "");
   if (!compact || !/^[A-Za-z0-9+/]+$/.test(compact)) {
-    throw new MiHomeError(
+    throw new MiHomeResponseError(
       "Mi Home returned an unrecognized encrypted response",
     );
   }
   const remainder = compact.length % 4;
   if (remainder === 1) {
-    throw new MiHomeError(
+    throw new MiHomeResponseError(
       "Mi Home returned a malformed encrypted response",
     );
   }
@@ -269,7 +278,7 @@ function normalizeBase64Response(text) {
 async function parseResponse(data, headers, signedNonce) {
   const rawText = data.toRawString();
   if (rawText === null || rawText === undefined) {
-    throw new MiHomeError("Mi Home returned a non-text response");
+    throw new MiHomeResponseError("Mi Home returned a non-text response");
   }
 
   let responseText = stripResponsePrefix(rawText);
@@ -282,7 +291,7 @@ async function parseResponse(data, headers, signedNonce) {
   }
 
   if (!responseText) {
-    throw new MiHomeError("Mi Home returned an empty response");
+    throw new MiHomeResponseError("Mi Home returned an empty response");
   }
 
   try {
@@ -296,13 +305,23 @@ async function parseResponse(data, headers, signedNonce) {
     }
     return JSON.parse(core.utf8Decode(decrypted));
   } catch (error) {
-    if (error instanceof MiHomeError) {
+    if (error instanceof MiHomeResponseError) {
       throw error;
     }
-    throw new MiHomeError(
+    throw new MiHomeResponseError(
       `Could not decode Mi Home response: ${error.message || error}`,
     );
   }
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => {
+    if (typeof Timer !== "undefined" && Timer.schedule) {
+      Timer.schedule(milliseconds, false, resolve);
+    } else {
+      setTimeout(resolve, milliseconds);
+    }
+  });
 }
 
 async function postJson(url, payload, config) {
@@ -408,21 +427,26 @@ async function stats(days = 7, limit = 200, suppliedConfig = null) {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  return postJson(
-    config.statsUrl,
-    {
-      uid: config.userId,
-      did: config.did,
-      time_start: dayCount <= 0 ? 0 : now - dayCount * 86400,
-      time_end: now,
-      limit: resultLimit,
-      accessKey: config.accessKey,
-      key: "4.2",
-      group: "raw",
-      type: "event",
-    },
-    config,
-  );
+  const payload = {
+    uid: config.userId,
+    did: config.did,
+    time_start: dayCount <= 0 ? 0 : now - dayCount * 86400,
+    time_end: now,
+    limit: resultLimit,
+    accessKey: config.accessKey,
+    key: "4.2",
+    group: "raw",
+    type: "event",
+  };
+  try {
+    return await postJson(config.statsUrl, payload, config);
+  } catch (error) {
+    if (!(error instanceof MiHomeResponseError)) {
+      throw error;
+    }
+    await delay(500);
+    return postJson(config.statsUrl, payload, config);
+  }
 }
 
 function summarizeStatsResponse(response, now = new Date()) {
@@ -443,6 +467,7 @@ module.exports = {
   DEFAULT_CONFIG,
   MiHomeAuthenticationError,
   MiHomeError,
+  MiHomeResponseError,
   clearConfig,
   feed,
   loadConfig,

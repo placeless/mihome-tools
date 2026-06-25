@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const zlib = require("node:zlib");
 
 const core = require("../MiHomeCore");
 
@@ -20,6 +21,27 @@ global.UUID = {
   string: () => "00010203-0405-0607-0809-0a0b0c0d0e0f",
 };
 
+global.Timer = {
+  schedule: (_milliseconds, _repeats, callback) => {
+    callback();
+    return {};
+  },
+};
+
+global.WebView = class {
+  async loadHTML() {}
+
+  async evaluateJavaScript(source) {
+    const match = /const encoded = ("(?:[^"\\]|\\.)*")/.exec(source);
+    assert.ok(match);
+    const compressed = Buffer.from(JSON.parse(match[1]), "base64");
+    return {
+      ok: true,
+      base64: zlib.gunzipSync(compressed).toString("base64"),
+    };
+  }
+};
+
 class FakeData {
   constructor(text) {
     this.text = text;
@@ -35,6 +57,7 @@ class FakeRequest {
   static responseStatus = 200;
   static responseText = '{"code":0,"result":[]}';
   static responseFactory = null;
+  static responseHeaders = { "Content-Type": "application/json" };
 
   constructor(url) {
     this.url = url;
@@ -45,7 +68,7 @@ class FakeRequest {
   async load() {
     this.response = {
       statusCode: FakeRequest.responseStatus,
-      headers: { "Content-Type": "application/json" },
+      headers: FakeRequest.responseHeaders,
     };
     const text = FakeRequest.responseFactory
       ? FakeRequest.responseFactory(this)
@@ -88,6 +111,7 @@ test("plain JSON API response is parsed and request body is encrypted", async ()
   FakeRequest.responseStatus = 200;
   FakeRequest.responseText = '{"code":0,"result":[]}';
   FakeRequest.responseFactory = null;
+  FakeRequest.responseHeaders = { "Content-Type": "application/json" };
 
   const response = await client.stats(7, 200, sampleConfig());
 
@@ -98,6 +122,8 @@ test("plain JSON API response is parsed and request body is encrypted", async ()
     request.url,
     "https://de.api.io.mi.com/app/user/get_user_device_data",
   );
+  assert.equal(request.headers["accept-encoding"], "identity");
+  assert.equal(request.headers["miot-accept-encoding"], "GZIP");
   assert.match(request.headers.cookie, /serviceToken=service-token/);
   assert.doesNotMatch(request.body, /access-key/);
   assert.match(request.body, /signature=/);
@@ -140,6 +166,7 @@ test("requests reject non-HTTPS and non-Xiaomi endpoints", async () => {
 
 test("JSON-wrapped encrypted responses are decoded", async () => {
   FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = { "Content-Type": "text/plain" };
   FakeRequest.responseFactory = (request) => {
     const form = new URLSearchParams(request.body);
     const nonce = form.get("_nonce");
@@ -158,6 +185,7 @@ test("JSON-wrapped encrypted responses are decoded", async () => {
 
 test("prefixed JSON and unpadded encrypted responses are decoded", async () => {
   FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = { "Content-Type": "text/plain" };
   FakeRequest.responseText = '&&&START&&&{"code":0,"result":[]}';
   FakeRequest.responseFactory = null;
   assert.deepEqual(await client.stats(1, 1, sampleConfig()), {
@@ -174,6 +202,55 @@ test("prefixed JSON and unpadded encrypted responses are decoded", async () => {
       .replace(/=+$/, "");
   };
   assert.deepEqual(await client.stats(1, 1, sampleConfig()), {
+    code: 0,
+    result: [],
+  });
+});
+
+test("stats retries one transient response-format failure", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = { "Content-Type": "text/plain" };
+  FakeRequest.responseFactory = () =>
+    FakeRequest.instances.length === 1
+      ? "temporary upstream response"
+      : '{"code":0,"result":[]}';
+
+  assert.deepEqual(await client.stats(7, 200, sampleConfig()), {
+    code: 0,
+    result: [],
+  });
+  assert.equal(FakeRequest.instances.length, 2);
+});
+
+test("feed never retries a response-format failure", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = { "Content-Type": "text/plain" };
+  FakeRequest.responseFactory = () => "temporary upstream response";
+
+  await assert.rejects(
+    () => client.feed(1, sampleConfig()),
+    (error) => error.name === "MiHomeResponseError",
+  );
+  assert.equal(FakeRequest.instances.length, 1);
+});
+
+test("MiOT GZIP encrypted responses are decoded", async () => {
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = {
+    "Content-Type": "text/plain",
+    "miot-content-encoding": "GZIP",
+  };
+  FakeRequest.responseFactory = (request) => {
+    const form = new URLSearchParams(request.body);
+    const nonce = form.get("_nonce");
+    const signedNonce = core.signedNonce(sampleConfig().ssecurity, nonce);
+    const compressed = zlib.gzipSync('{"code":0,"result":[]}');
+    return core.base64Encode(core.rc4Crypt(signedNonce, [...compressed]));
+  };
+
+  assert.deepEqual(await client.stats(7, 200, sampleConfig()), {
     code: 0,
     result: [],
   });
