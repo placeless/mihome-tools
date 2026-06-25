@@ -99,20 +99,17 @@ tool, then import the updated session values again.
 Run `MiHomeFeed` and choose the number of portions. A confirmation dialog is
 always shown before the request is sent.
 
-When used from Apple Shortcuts, pass either a number:
-
-```text
-1
-```
-
-or a dictionary:
+When used from Apple Shortcuts, pass a dictionary with an explicit confirmation:
 
 ```json
-{ "portions": 1 }
+{ "portions": 1, "confirmed": true }
 ```
 
-The script returns a dictionary containing `ok`, `portions`, and the Mi Home
-response.
+The script does not present alerts in Shortcuts/Siri. It returns a dictionary
+containing `ok`, `portions`, and the Mi Home response. Requiring
+`"confirmed": true` prevents an unattended Shortcut from feeding accidentally;
+consider adding an **Ask for Confirmation** action before **Run Script** as an
+additional safeguard.
 
 ### Stats
 
@@ -125,11 +122,21 @@ Apple Shortcuts may pass:
 { "days": 30, "limit": 1000 }
 ```
 
+`MiHomeStats` does not present alerts in Shortcuts/Siri and returns its result
+as a dictionary for subsequent Shortcut actions.
+
 ### Widget
 
-Add a Scriptable widget to the Home Screen and select `MiHomeWidget`. Small
-widgets show today's portions; medium widgets also show yesterday, seven-day,
-and monthly totals. Tapping the widget opens `MiHomeStats`.
+The iOS widget picker lists **Scriptable**, not individual script names:
+
+1. Long-press the Home Screen and tap **+**.
+2. Add a small or medium **Scriptable** widget.
+3. Long-press the new widget, choose **Edit Widget**, and select `MiHomeWidget`
+   under **Script**.
+
+Small widgets show today's portions; medium widgets also show yesterday,
+seven-day, and monthly totals. Tapping the widget opens `MiHomeStats`. Use
+`MiHomeStats`, not `MiHomeWidget`, from Apple Shortcuts.
 
 Widget refresh timing is controlled by iOS and is not guaranteed to occur at the
 exact requested interval.

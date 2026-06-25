@@ -36,6 +36,41 @@ class MiHomeResponseError extends MiHomeError {
   }
 }
 
+function isShortcutContext(runConfig) {
+  return Boolean(
+    runConfig &&
+      (runConfig.runsWithSiri || runConfig.runsInActionExtension),
+  );
+}
+
+function isInteractiveContext(runConfig) {
+  return Boolean(
+    runConfig &&
+      runConfig.runsInApp &&
+      !runConfig.runsInWidget &&
+      !isShortcutContext(runConfig),
+  );
+}
+
+function shortcutFeedPortions(parameter) {
+  if (!parameter || typeof parameter !== "object" || Array.isArray(parameter)) {
+    throw new MiHomeError(
+      'Shortcuts feeding requires a dictionary like {"portions":1,' +
+        '"confirmed":true}',
+    );
+  }
+  const portions = Number(parameter.portions);
+  if (!Number.isInteger(portions) || portions < 1) {
+    throw new MiHomeError("Shortcut portions must be a positive integer");
+  }
+  if (parameter.confirmed !== true) {
+    throw new MiHomeError(
+      'Shortcut feeding requires the dictionary value "confirmed": true',
+    );
+  }
+  return portions;
+}
+
 function normalizeConfig(config) {
   const normalized = Object.assign({}, DEFAULT_CONFIG, config || {});
   normalized.defaultPortions = Number(normalized.defaultPortions);
@@ -512,10 +547,13 @@ module.exports = {
   MiHomeResponseError,
   clearConfig,
   feed,
+  isInteractiveContext,
+  isShortcutContext,
   loadConfig,
   normalizeConfig,
   postJson,
   saveConfig,
+  shortcutFeedPortions,
   stats,
   summarizeStatsResponse,
 };

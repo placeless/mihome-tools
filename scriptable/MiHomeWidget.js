@@ -102,8 +102,14 @@ async function createWidget() {
 }
 
 const widget = await createWidget();
-Script.setWidget(widget);
-if (!config.runsInWidget) {
+if (config.runsInWidget) {
+  Script.setWidget(widget);
+} else if (config.runsInApp) {
   await widget.presentMedium();
+} else {
+  Script.setShortcutOutput({
+    ok: false,
+    error: "Use MiHomeStats in Shortcuts; MiHomeWidget is for iOS widgets.",
+  });
 }
 Script.complete();
