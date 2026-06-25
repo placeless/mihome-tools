@@ -12,8 +12,13 @@ uv sync --locked --all-groups
 make check
 ```
 
+`make check` requires Node.js 20 or newer for the Scriptable protocol tests.
+
 Keep changes compatible with Python 3.10 and newer. Add regression tests for
 behavior changes and keep dependencies pinned through `uv.lock`.
+
+Scriptable protocol changes must also pass the Node.js tests under
+`scriptable/tests/`.
 
 ## Security and privacy
 

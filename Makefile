@@ -3,7 +3,7 @@ SHELL := /bin/bash
 PROJECT_ROOT := $(CURDIR)
 
 .PHONY: sync install uninstall reinstall run-feed run-stats run-login
-.PHONY: test lint audit build check
+.PHONY: test test-scriptable lint audit build check
 
 sync:
 	uv sync --locked --all-groups
@@ -29,6 +29,9 @@ run-login: sync
 test: sync
 	uv run --locked python -m unittest discover -s tests -v
 
+test-scriptable:
+	node --test scriptable/tests/*.test.js
+
 lint: sync
 	uv run --locked ruff check src tests
 	uv run --locked ruff format --check src tests
@@ -40,4 +43,4 @@ build:
 	rm -rf dist
 	uv build --no-sources
 
-check: lint test audit build
+check: lint test test-scriptable audit build

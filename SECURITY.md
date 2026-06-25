@@ -19,3 +19,8 @@ information.
 - `--debug` redacts account and device identifiers.
 - `--json` intentionally prints raw API data and should not be pasted into
   public issues without manual review.
+- The optional Scriptable client stores Xiaomi credentials in Scriptable
+  Keychain on the iPhone. Any untrusted Scriptable code may attempt to read the
+  same entry, so only install scripts you have reviewed.
+- Scriptable cloud requests are restricted to HTTPS endpoints under Xiaomi's
+  `api.io.mi.com` domain.

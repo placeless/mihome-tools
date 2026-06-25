@@ -34,6 +34,10 @@ jobs:
       - name: Run tests
         run: uv run --locked python -m unittest discover -s tests -v
 
+      - name: Test Scriptable protocol module
+        if: matrix.python-version == '3.14'
+        run: node --test scriptable/tests/*.test.js
+
       - name: Run Ruff
         if: matrix.python-version == '3.14'
         run: |

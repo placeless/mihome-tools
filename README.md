@@ -16,6 +16,7 @@ its feed history.
 - Refresh an expired Xiaomi cloud session through Xiaomi account login.
 - Install isolated commands with locked Python dependencies.
 - Redact account and device identifiers from debug output.
+- Run directly on an iPhone through an optional Scriptable client.
 
 The current event parser is tailored to a feeder whose portion count appears
 as MIoT property `piid: 4` in event key `4.2`. Other feeder models may require
@@ -195,6 +196,22 @@ Mi Home data and may contain private information; review it before sharing.
 - `130`: interactive login was cancelled
 
 This makes the commands safe to use from scripts and automations.
+
+## iPhone and Scriptable
+
+The [Scriptable client](scriptable/README.md) sends the same signed and
+encrypted requests directly from an iPhone to Mi Home:
+
+```text
+Scriptable on iPhone → Mi Home cloud API
+```
+
+It includes a one-file installer, Keychain-based setup, a confirmed feed
+action, feed-history display, Apple Shortcuts input/output, and a Home Screen
+widget. No always-on Mac or web server is required.
+
+The Xiaomi credentials are stored on the iPhone, so review the security notes
+and do not install untrusted Scriptable code.
 
 ## Troubleshooting
 
