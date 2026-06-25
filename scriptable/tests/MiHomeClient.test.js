@@ -35,17 +35,25 @@ global.WebView = class {
     assert.match(source, /completion\(JSON\.stringify/);
     const match = /const encoded = ("(?:[^"\\]|\\.)*")/.exec(source);
     assert.ok(match);
-    const compressed = Buffer.from(JSON.parse(match[1]), "base64");
-    return JSON.stringify({
-      ok: true,
-      base64: zlib.gunzipSync(compressed).toString("base64"),
-    });
+    try {
+      const compressed = Buffer.from(JSON.parse(match[1]), "base64");
+      return JSON.stringify({
+        ok: true,
+        base64: zlib.gunzipSync(compressed).toString("base64"),
+      });
+    } catch (error) {
+      return JSON.stringify({ ok: false, error: String(error) });
+    }
   }
 };
 
 class FakeData {
   constructor(text) {
     this.text = text;
+  }
+
+  getBytes() {
+    return [...Buffer.from(this.text, "utf8")];
   }
 
   toRawString() {
@@ -124,7 +132,7 @@ test("plain JSON API response is parsed and request body is encrypted", async ()
     "https://de.api.io.mi.com/app/user/get_user_device_data",
   );
   assert.equal(request.headers["accept-encoding"], "identity");
-  assert.equal(request.headers["miot-accept-encoding"], "GZIP");
+  assert.equal(request.headers["miot-accept-encoding"], undefined);
   assert.match(request.headers.cookie, /serviceToken=service-token/);
   assert.doesNotMatch(request.body, /access-key/);
   assert.match(request.body, /signature=/);
@@ -235,6 +243,49 @@ test("feed never retries a response-format failure", async () => {
     (error) => error.name === "MiHomeResponseError",
   );
   assert.equal(FakeRequest.instances.length, 1);
+});
+
+test("stats does not retry a decompression failure", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = {
+    "Content-Type": "text/plain",
+    "miot-content-encoding": "GZIP",
+  };
+  FakeRequest.responseFactory = (request) => {
+    const form = new URLSearchParams(request.body);
+    const nonce = form.get("_nonce");
+    const signedNonce = core.signedNonce(sampleConfig().ssecurity, nonce);
+    return core.encryptRc4(signedNonce, "not gzip data");
+  };
+
+  await assert.rejects(
+    () => client.stats(7, 200, sampleConfig()),
+    (error) =>
+      error.name === "MiHomeResponseError" &&
+      error.message.includes("Could not decompress"),
+  );
+  assert.equal(FakeRequest.instances.length, 1);
+});
+
+test("format errors include safe response metadata", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = {
+    "Content-Type": "text/html",
+    "Content-Encoding": "br",
+  };
+  FakeRequest.responseFactory = () => "<html>temporary error</html>";
+
+  await assert.rejects(
+    () => client.feed(1, sampleConfig()),
+    (error) =>
+      error.name === "MiHomeResponseError" &&
+      error.message.includes("bytes=28") &&
+      error.message.includes("prefix=3c68746d") &&
+      error.message.includes("content-type=text/html") &&
+      !error.message.includes("temporary error"),
+  );
 });
 
 test("MiOT GZIP encrypted responses are decoded", async () => {
