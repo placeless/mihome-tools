@@ -134,15 +134,16 @@ and monthly totals. Tapping the widget opens `MiHomeStats`.
 Widget refresh timing is controlled by iOS and is not guaranteed to occur at the
 exact requested interval.
 
-Stats requests use transport-level identity encoding and retry once when Xiaomi
-returns an intermittent response-format error. Feed actions are never retried.
+Stats requests use transport-level identity encoding and retry once only when
+Xiaomi returns an intermittent raw response-format error. Feed actions,
+decompression failures, and decoded-response errors are never retried.
 
 ## Compatibility
 
-Encrypted GZIP responses are decompressed with the WebKit `DecompressionStream`
-API through Scriptable's `WebView`. A current iOS and Scriptable version is
-recommended. The WebView bridge returns serialized JSON because Scriptable does
-not support arbitrary JavaScript objects as callback values.
+Scriptable does not proactively request MiOT GZIP because its networking stack
+has shown inconsistent behavior with those responses. If Xiaomi sends an
+encrypted GZIP response anyway, it is decompressed with the WebKit
+`DecompressionStream` API through Scriptable's `WebView`.
 
 The client is tailored to the same feeder event (`key: "4.2"`, portion property
 `piid: 4`) and MIoT action shape as the Python implementation.

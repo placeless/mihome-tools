@@ -29,9 +29,10 @@ class MiHomeAuthenticationError extends MiHomeError {
 }
 
 class MiHomeResponseError extends MiHomeError {
-  constructor(message) {
+  constructor(message, retryable = false) {
     super(message);
     this.name = "MiHomeResponseError";
+    this.retryable = retryable;
   }
 }
 
@@ -142,7 +143,6 @@ function buildHeaders(url, config) {
 
   return {
     "miot-encrypt-algorithm": "ENCRYPT-RC4",
-    "miot-accept-encoding": "GZIP",
     "content-type": "application/x-www-form-urlencoded",
     accept: "*/*",
     "accept-encoding": "identity",
@@ -263,7 +263,32 @@ function parseJsonResponse(text) {
   }
 }
 
-function normalizeBase64Response(text) {
+function responseFingerprint(data, headers) {
+  const bytes = typeof data.getBytes === "function" ? data.getBytes() : [];
+  const prefix = bytes
+    .slice(0, 4)
+    .map((byte) => Number(byte).toString(16).padStart(2, "0"))
+    .join("");
+  const details = [
+    `bytes=${bytes.length || "unknown"}`,
+    `prefix=${prefix || "unknown"}`,
+  ];
+  for (
+    const name of [
+      "content-type",
+      "content-encoding",
+      "miot-content-encoding",
+    ]
+  ) {
+    const value = getHeader(headers, name);
+    if (value) {
+      details.push(`${name}=${String(value).slice(0, 80)}`);
+    }
+  }
+  return details.join(", ");
+}
+
+function normalizeBase64Response(text, fingerprint) {
   const compact = text
     .replace(/\s+/g, "")
     .replace(/-/g, "+")
@@ -271,22 +296,28 @@ function normalizeBase64Response(text) {
     .replace(/=+$/, "");
   if (!compact || !/^[A-Za-z0-9+/]+$/.test(compact)) {
     throw new MiHomeResponseError(
-      "Mi Home returned an unrecognized encrypted response",
+      `Mi Home returned an unrecognized encrypted response (${fingerprint})`,
+      true,
     );
   }
   const remainder = compact.length % 4;
   if (remainder === 1) {
     throw new MiHomeResponseError(
-      "Mi Home returned a malformed encrypted response",
+      `Mi Home returned a malformed encrypted response (${fingerprint})`,
+      true,
     );
   }
   return compact + "=".repeat((4 - remainder) % 4);
 }
 
 async function parseResponse(data, headers, signedNonce) {
+  const fingerprint = responseFingerprint(data, headers);
   const rawText = data.toRawString();
   if (rawText === null || rawText === undefined) {
-    throw new MiHomeResponseError("Mi Home returned a non-text response");
+    throw new MiHomeResponseError(
+      `Mi Home returned a non-text response (${fingerprint})`,
+      true,
+    );
   }
 
   let responseText = stripResponsePrefix(rawText);
@@ -299,13 +330,16 @@ async function parseResponse(data, headers, signedNonce) {
   }
 
   if (!responseText) {
-    throw new MiHomeResponseError("Mi Home returned an empty response");
+    throw new MiHomeResponseError(
+      `Mi Home returned an empty response (${fingerprint})`,
+      true,
+    );
   }
 
   try {
     let decrypted = core.decryptRc4Bytes(
       signedNonce,
-      normalizeBase64Response(responseText),
+      normalizeBase64Response(responseText, fingerprint),
     );
     const encoding = getHeader(headers, "miot-content-encoding");
     if (encoding && String(encoding).toUpperCase() === "GZIP") {
@@ -449,7 +483,7 @@ async function stats(days = 7, limit = 200, suppliedConfig = null) {
   try {
     return await postJson(config.statsUrl, payload, config);
   } catch (error) {
-    if (!(error instanceof MiHomeResponseError)) {
+    if (!(error instanceof MiHomeResponseError) || !error.retryable) {
       throw error;
     }
     await delay(500);
