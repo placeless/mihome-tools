@@ -32,13 +32,14 @@ global.WebView = class {
   async loadHTML() {}
 
   async evaluateJavaScript(source) {
+    assert.match(source, /completion\(JSON\.stringify/);
     const match = /const encoded = ("(?:[^"\\]|\\.)*")/.exec(source);
     assert.ok(match);
     const compressed = Buffer.from(JSON.parse(match[1]), "base64");
-    return {
+    return JSON.stringify({
       ok: true,
       base64: zlib.gunzipSync(compressed).toString("base64"),
-    };
+    });
   }
 };
 

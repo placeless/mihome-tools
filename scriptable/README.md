@@ -141,7 +141,8 @@ returns an intermittent response-format error. Feed actions are never retried.
 
 Encrypted GZIP responses are decompressed with the WebKit `DecompressionStream`
 API through Scriptable's `WebView`. A current iOS and Scriptable version is
-recommended.
+recommended. The WebView bridge returns serialized JSON because Scriptable does
+not support arbitrary JavaScript objects as callback values.
 
 The client is tailored to the same feeder event (`key: "4.2"`, portion property
 `piid: 4`) and MIoT action shape as the Python implementation.

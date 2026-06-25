@@ -203,16 +203,24 @@ async function gunzip(bytes) {
             ...output.subarray(i, i + chunkSize)
           )
         }
-        completion({ ok: true, base64: btoa(result) })
+        completion(JSON.stringify({ ok: true, base64: btoa(result) }))
       } catch (error) {
-        completion({ ok: false, error: String(error) })
+        completion(JSON.stringify({ ok: false, error: String(error) }))
       }
     })()
   `;
 
-  const result = await webView.evaluateJavaScript(javaScript, true);
+  const serialized = await webView.evaluateJavaScript(javaScript, true);
+  let result;
+  try {
+    result = JSON.parse(serialized);
+  } catch (_error) {
+    throw new MiHomeResponseError(
+      "Could not decode the WebView decompression result",
+    );
+  }
   if (!result || !result.ok) {
-    throw new MiHomeError(
+    throw new MiHomeResponseError(
       `Could not decompress Mi Home response: ${
         result ? result.error : "unknown error"
       }`,
