@@ -34,6 +34,7 @@ class FakeRequest {
   static instances = [];
   static responseStatus = 200;
   static responseText = '{"code":0,"result":[]}';
+  static responseFactory = null;
 
   constructor(url) {
     this.url = url;
@@ -46,7 +47,10 @@ class FakeRequest {
       statusCode: FakeRequest.responseStatus,
       headers: { "Content-Type": "application/json" },
     };
-    return new FakeData(FakeRequest.responseText);
+    const text = FakeRequest.responseFactory
+      ? FakeRequest.responseFactory(this)
+      : FakeRequest.responseText;
+    return new FakeData(text);
   }
 }
 
@@ -83,6 +87,7 @@ test("plain JSON API response is parsed and request body is encrypted", async ()
   FakeRequest.instances.length = 0;
   FakeRequest.responseStatus = 200;
   FakeRequest.responseText = '{"code":0,"result":[]}';
+  FakeRequest.responseFactory = null;
 
   const response = await client.stats(7, 200, sampleConfig());
 
@@ -101,6 +106,7 @@ test("plain JSON API response is parsed and request body is encrypted", async ()
 test("401 auth error becomes an actionable authentication error", async () => {
   FakeRequest.responseStatus = 401;
   FakeRequest.responseText = '{"code":3,"message":"auth error"}';
+  FakeRequest.responseFactory = null;
 
   await assert.rejects(
     () => client.stats(1, 1, sampleConfig()),
@@ -111,6 +117,7 @@ test("401 auth error becomes an actionable authentication error", async () => {
 });
 
 test("requests reject non-HTTPS and non-Xiaomi endpoints", async () => {
+  FakeRequest.responseFactory = null;
   for (
     const statsUrl of [
       "http://de.api.io.mi.com/app/user/get_user_device_data",
@@ -129,4 +136,45 @@ test("requests reject non-HTTPS and non-Xiaomi endpoints", async () => {
     );
     assert.equal(FakeRequest.instances.length, 0);
   }
+});
+
+test("JSON-wrapped encrypted responses are decoded", async () => {
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseFactory = (request) => {
+    const form = new URLSearchParams(request.body);
+    const nonce = form.get("_nonce");
+    const signedNonce = core.signedNonce(sampleConfig().ssecurity, nonce);
+    const encrypted = core.encryptRc4(
+      signedNonce,
+      '{"code":0,"message":"ok","result":{}}',
+    );
+    return JSON.stringify(encrypted);
+  };
+
+  const response = await client.feed(1, sampleConfig());
+
+  assert.deepEqual(response, { code: 0, message: "ok", result: {} });
+});
+
+test("prefixed JSON and unpadded encrypted responses are decoded", async () => {
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseText = '&&&START&&&{"code":0,"result":[]}';
+  FakeRequest.responseFactory = null;
+  assert.deepEqual(await client.stats(1, 1, sampleConfig()), {
+    code: 0,
+    result: [],
+  });
+
+  FakeRequest.responseFactory = (request) => {
+    const form = new URLSearchParams(request.body);
+    const nonce = form.get("_nonce");
+    const signedNonce = core.signedNonce(sampleConfig().ssecurity, nonce);
+    return core
+      .encryptRc4(signedNonce, '{"code":0,"result":[]}')
+      .replace(/=+$/, "");
+  };
+  assert.deepEqual(await client.stats(1, 1, sampleConfig()), {
+    code: 0,
+    result: [],
+  });
 });
