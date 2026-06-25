@@ -1,4 +1,5 @@
 const client = importModule("MiHomeClient");
+const runContext = config;
 
 function requestOptions() {
   let days = 7;
@@ -51,10 +52,11 @@ async function showSummary(summary, config, truncated) {
 }
 
 async function main() {
+  const interactive = client.isInteractiveContext(runContext);
   try {
-    const config = client.loadConfig();
+    const appConfig = client.loadConfig();
     const { days, limit } = requestOptions();
-    const response = await client.stats(days, limit, config);
+    const response = await client.stats(days, limit, appConfig);
     const summary = client.summarizeStatsResponse(response);
     const result = {
       ok: true,
@@ -63,15 +65,19 @@ async function main() {
       truncated: response.result.length >= limit,
       summary,
     };
-    await showSummary(summary, config, result.truncated);
+    if (interactive) {
+      await showSummary(summary, appConfig, result.truncated);
+    }
     return result;
   } catch (error) {
     const message = String(error.message || error);
-    const alert = new Alert();
-    alert.title = "Stats failed";
-    alert.message = message;
-    alert.addAction("OK");
-    await alert.presentAlert();
+    if (interactive) {
+      const alert = new Alert();
+      alert.title = "Stats failed";
+      alert.message = message;
+      alert.addAction("OK");
+      await alert.presentAlert();
+    }
     return { ok: false, error: message };
   }
 }

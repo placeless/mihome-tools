@@ -115,6 +115,45 @@ test("configuration is normalized and stored in Keychain", () => {
   assert.equal(Keychain.contains(client.CONFIG_KEY), false);
 });
 
+test("runtime contexts distinguish app UI from Shortcuts and widgets", () => {
+  assert.equal(
+    client.isInteractiveContext({
+      runsInApp: true,
+      runsWithSiri: false,
+      runsInActionExtension: false,
+      runsInWidget: false,
+    }),
+    true,
+  );
+  assert.equal(
+    client.isInteractiveContext({
+      runsInApp: true,
+      runsWithSiri: true,
+      runsInActionExtension: false,
+      runsInWidget: false,
+    }),
+    false,
+  );
+  assert.equal(client.isShortcutContext({ runsWithSiri: true }), true);
+  assert.equal(client.isShortcutContext({ runsInActionExtension: true }), true);
+  assert.equal(client.isShortcutContext({ runsInWidget: true }), false);
+});
+
+test("Shortcut feeding requires explicit confirmation", () => {
+  assert.equal(
+    client.shortcutFeedPortions({ portions: 2, confirmed: true }),
+    2,
+  );
+  assert.throws(
+    () => client.shortcutFeedPortions(2),
+    /requires a dictionary/,
+  );
+  assert.throws(
+    () => client.shortcutFeedPortions({ portions: 2 }),
+    /confirmed/,
+  );
+});
+
 test("plain JSON API response is parsed and request body is encrypted", async () => {
   FakeRequest.instances.length = 0;
   FakeRequest.responseStatus = 200;

@@ -1,5 +1,6 @@
 const client = importModule("MiHomeClient");
 const core = importModule("MiHomeCore");
+const runContext = config;
 
 function requestedPortions() {
   const candidates = [
@@ -20,6 +21,9 @@ function requestedPortions() {
 }
 
 async function choosePortions(config) {
+  if (client.isShortcutContext(runContext)) {
+    return client.shortcutFeedPortions(args.shortcutParameter);
+  }
   const requested = requestedPortions();
   if (requested !== null) {
     return requested;
@@ -57,25 +61,26 @@ async function showResult(title, message) {
 }
 
 async function main() {
+  const interactive = client.isInteractiveContext(runContext);
   try {
-    const config = client.loadConfig();
-    const portions = await choosePortions(config);
+    const appConfig = client.loadConfig();
+    const portions = await choosePortions(appConfig);
     if (portions === null) {
       return { ok: false, cancelled: true };
     }
-    if (!(await confirmFeed(portions, config))) {
+    if (interactive && !(await confirmFeed(portions, appConfig))) {
       return { ok: false, cancelled: true };
     }
 
-    const response = await client.feed(portions, config);
+    const response = await client.feed(portions, appConfig);
     const ok = core.isOkFeedResponse(response);
     const result = { ok, portions, response };
-    if (ok) {
+    if (interactive && ok) {
       await showResult(
         "Feeding complete",
         `Dispensed ${portions} portion${portions === 1 ? "" : "s"}.`,
       );
-    } else {
+    } else if (interactive) {
       await showResult(
         "Feeding failed",
         response && response.message
@@ -86,7 +91,9 @@ async function main() {
     return result;
   } catch (error) {
     const message = String(error.message || error);
-    await showResult("Feeding failed", message);
+    if (interactive) {
+      await showResult("Feeding failed", message);
+    }
     return { ok: false, error: message };
   }
 }
