@@ -134,6 +134,9 @@ and monthly totals. Tapping the widget opens `MiHomeStats`.
 Widget refresh timing is controlled by iOS and is not guaranteed to occur at the
 exact requested interval.
 
+Stats requests use transport-level identity encoding and retry once when Xiaomi
+returns an intermittent response-format error. Feed actions are never retried.
+
 ## Compatibility
 
 Encrypted GZIP responses are decompressed with the WebKit `DecompressionStream`
