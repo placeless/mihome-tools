@@ -221,22 +221,88 @@ function errorMessage(rawText) {
   }
 }
 
+function stripResponsePrefix(rawText) {
+  let text = String(rawText || "").trim().replace(/^\uFEFF/, "");
+  for (const prefix of ["&&&START&&&", ")]}',", ")]}'"]) {
+    if (text.startsWith(prefix)) {
+      text = text.slice(prefix.length).trim();
+    }
+  }
+  return text;
+}
+
+function parseJsonResponse(text) {
+  if (
+    !text.startsWith("{") &&
+    !text.startsWith("[") &&
+    !text.startsWith('"')
+  ) {
+    return { parsed: false, value: null };
+  }
+  try {
+    return { parsed: true, value: JSON.parse(text) };
+  } catch (_error) {
+    return { parsed: false, value: null };
+  }
+}
+
+function normalizeBase64Response(text) {
+  const compact = text
+    .replace(/\s+/g, "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .replace(/=+$/, "");
+  if (!compact || !/^[A-Za-z0-9+/]+$/.test(compact)) {
+    throw new MiHomeError(
+      "Mi Home returned an unrecognized encrypted response",
+    );
+  }
+  const remainder = compact.length % 4;
+  if (remainder === 1) {
+    throw new MiHomeError(
+      "Mi Home returned a malformed encrypted response",
+    );
+  }
+  return compact + "=".repeat((4 - remainder) % 4);
+}
+
 async function parseResponse(data, headers, signedNonce) {
-  const rawText = data.toRawString().trim();
-  if (!rawText) {
+  const rawText = data.toRawString();
+  if (rawText === null || rawText === undefined) {
+    throw new MiHomeError("Mi Home returned a non-text response");
+  }
+
+  let responseText = stripResponsePrefix(rawText);
+  const jsonResponse = parseJsonResponse(responseText);
+  if (jsonResponse.parsed && typeof jsonResponse.value !== "string") {
+    return jsonResponse.value;
+  }
+  if (jsonResponse.parsed) {
+    responseText = jsonResponse.value.trim();
+  }
+
+  if (!responseText) {
     throw new MiHomeError("Mi Home returned an empty response");
   }
 
-  if (rawText.startsWith("{") || rawText.startsWith("[")) {
-    return JSON.parse(rawText);
+  try {
+    let decrypted = core.decryptRc4Bytes(
+      signedNonce,
+      normalizeBase64Response(responseText),
+    );
+    const encoding = getHeader(headers, "miot-content-encoding");
+    if (encoding && String(encoding).toUpperCase() === "GZIP") {
+      decrypted = await gunzip(decrypted);
+    }
+    return JSON.parse(core.utf8Decode(decrypted));
+  } catch (error) {
+    if (error instanceof MiHomeError) {
+      throw error;
+    }
+    throw new MiHomeError(
+      `Could not decode Mi Home response: ${error.message || error}`,
+    );
   }
-
-  let decrypted = core.decryptRc4Bytes(signedNonce, rawText);
-  const encoding = getHeader(headers, "miot-content-encoding");
-  if (encoding && String(encoding).toUpperCase() === "GZIP") {
-    decrypted = await gunzip(decrypted);
-  }
-  return JSON.parse(core.utf8Decode(decrypted));
 }
 
 async function postJson(url, payload, config) {

@@ -34,6 +34,9 @@ The installer downloads the remaining scripts from the `main` branch of this
 repository into Scriptable's iCloud folder. Review the source before running it
 if this is a concern.
 
+Run `MiHomeInstaller` again to update an existing installation. Stored Keychain
+configuration is preserved.
+
 Alternatively, manually copy these files into the same Scriptable folder:
 
 - `MiHomeCore.js`
