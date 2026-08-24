@@ -12,9 +12,11 @@ async function confirmLogin() {
   const alert = new Alert();
   alert.title = "Refresh Mi Home login";
   alert.message =
-    "A Xiaomi login page will open. Sign in to the same account, finish any " +
-    "verification, then tap Done when Xiaomi reports success. Your existing " +
-    "session is kept unless the refreshed session passes a Mi Home API test.";
+    "A Xiaomi login page will open in Safari. Sign in to the same account, " +
+    "finish any verification, then tap Confirm Login on Xiaomi's login " +
+    "confirmation page. Tap Done only after Xiaomi reports success. Your " +
+    "existing session is kept unless the refreshed session passes a Mi Home " +
+    "API test.";
   alert.addAction("Open Xiaomi login");
   alert.addCancelAction("Cancel");
   return (await alert.presentAlert()) === 0;
@@ -38,14 +40,17 @@ async function main() {
 
   try {
     const login = await client.startXiaomiLogin(existing.language);
-    const webView = new WebView();
-    await webView.loadURL(login.loginUrl);
-    await webView.present(true);
-
-    const refreshedSession = await client.finishXiaomiLogin(
-      login,
-      existing.userId,
+    const completion = client.finishXiaomiLogin(login, existing.userId).then(
+      (session) => ({ session }),
+      (error) => ({ error }),
     );
+    await Safari.openInApp(login.loginUrl, true);
+
+    const result = await completion;
+    if (result.error) {
+      throw result.error;
+    }
+    const refreshedSession = result.session;
     if (!refreshedSession.passportDeviceId) {
       delete refreshedSession.passportDeviceId;
     }

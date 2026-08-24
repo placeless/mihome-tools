@@ -94,19 +94,22 @@ values through guided forms.
 
 The initial setup still needs the device-specific values above. After that,
 when the Xiaomi session expires, run `MiHomeLogin` directly on the iPhone. It
-opens Xiaomi's account page in a WebView, requires the same Xiaomi account as
-the stored configuration, verifies the refreshed session with a one-record
-stats request, and only then replaces the session values in Keychain. The
-device DID, access key, action IDs, and other settings are preserved.
+opens Xiaomi's account page in an in-app Safari view, requires the same Xiaomi
+account as the stored configuration, verifies the refreshed session with a
+one-record stats request, and only then replaces the session values in
+Keychain. The device DID, access key, action IDs, and other settings are
+preserved.
 
 ## Usage
 
 ### Login refresh
 
-Run `MiHomeLogin`, finish signing in on Xiaomi's page, then tap **Done**. A
-successful refresh leaves all device and feeder settings unchanged. If login,
-the account check, or the API verification fails, the previous Keychain
-configuration remains in place.
+Run `MiHomeLogin` and finish signing in on Xiaomi's page. Xiaomi may label the
+final page as a QR-code login confirmation even though browser login does not
+display a QR code. Tap **Confirm Login** on that page, wait for the success
+message, and only then tap **Done**. A successful refresh leaves all device and
+feeder settings unchanged. If login, the account check, or the API verification
+fails, the previous Keychain configuration remains in place.
 
 ### Feed
 

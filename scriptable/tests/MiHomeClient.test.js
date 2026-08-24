@@ -205,6 +205,7 @@ test("on-device login exchanges a browser login for session values", async () =>
           code: 0,
           loginUrl: "https://eu.account.xiaomi.com/longPolling/login?ticket=test",
           lp: "https://eu.lp.account.xiaomi.com/lp/s?k=test",
+          timeout: 300,
         })
       );
     }
@@ -231,6 +232,7 @@ test("on-device login exchanges a browser login for session values", async () =>
 
   const login = await client.startXiaomiLogin("ZH_CN");
   assert.match(login.loginUrl, /^https:\/\/eu\.account\.xiaomi\.com\//);
+  assert.equal(login.timeout, 300);
   const startUrl = new URL(FakeRequest.instances[0].url);
   assert.equal(startUrl.searchParams.get("_locale"), "zh_CN");
 
@@ -244,6 +246,7 @@ test("on-device login exchanges a browser login for session values", async () =>
   });
   const handoff = FakeRequest.instances.at(-1);
   assert.match(handoff.headers.cookie, /passToken=pass-token/);
+  assert.equal(FakeRequest.instances[1].timeoutInterval, 300);
 });
 
 test("on-device login supports the pinned migate service exchange", async () => {
