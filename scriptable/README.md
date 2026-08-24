@@ -35,13 +35,17 @@ repository into Scriptable's iCloud folder. Review the source before running it
 if this is a concern.
 
 Run `MiHomeInstaller` again to update an existing installation. Stored Keychain
-configuration is preserved.
+configuration is preserved, and current installers also update themselves. If
+your installed copy predates `MiHomeLogin`, replace `MiHomeInstaller.js` once
+from this repository before running it; alternatively, manually copy
+`MiHomeLogin.js` and the updated `MiHomeClient.js`.
 
 Alternatively, manually copy these files into the same Scriptable folder:
 
 - `MiHomeCore.js`
 - `MiHomeClient.js`
 - `MiHomeSetup.js`
+- `MiHomeLogin.js`
 - `MiHomeFeed.js`
 - `MiHomeStats.js`
 - `MiHomeWidget.js`
@@ -88,11 +92,21 @@ the connection test fails. A one-record stats request is used to test the
 session before the configuration is saved. `MiHomeSetup` can also collect the
 values through guided forms.
 
-Scriptable does not perform Xiaomi account login. When the Xiaomi session
-expires, refresh it with the CLI `mihome-login` or another trusted Xiaomi login
-tool, then import the updated session values again.
+The initial setup still needs the device-specific values above. After that,
+when the Xiaomi session expires, run `MiHomeLogin` directly on the iPhone. It
+opens Xiaomi's account page in a WebView, requires the same Xiaomi account as
+the stored configuration, verifies the refreshed session with a one-record
+stats request, and only then replaces the session values in Keychain. The
+device DID, access key, action IDs, and other settings are preserved.
 
 ## Usage
+
+### Login refresh
+
+Run `MiHomeLogin`, finish signing in on Xiaomi's page, then tap **Done**. A
+successful refresh leaves all device and feeder settings unchanged. If login,
+the account check, or the API verification fails, the previous Keychain
+configuration remains in place.
 
 ### Feed
 

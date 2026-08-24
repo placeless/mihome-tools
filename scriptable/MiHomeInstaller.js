@@ -2,9 +2,11 @@ const REPOSITORY_BASE =
   "https://raw.githubusercontent.com/placeless/mihome-tools/main/scriptable";
 
 const FILES = [
+  "MiHomeInstaller.js",
   "MiHomeCore.js",
   "MiHomeClient.js",
   "MiHomeSetup.js",
+  "MiHomeLogin.js",
   "MiHomeFeed.js",
   "MiHomeStats.js",
   "MiHomeWidget.js",
@@ -61,8 +63,9 @@ async function main() {
   alert.title = "Installation complete";
   alert.message =
     "Run MiHomeSetup next. Credentials are stored in Keychain, not in " +
-    "the downloaded script files. To add the widget, add a Scriptable " +
-    "widget in iOS, edit it, then select MiHomeWidget under Script.";
+    "the downloaded script files. The installer itself was also updated. " +
+    "To add the widget, add a Scriptable widget in iOS, edit it, then " +
+    "select MiHomeWidget under Script.";
   alert.addAction("OK");
   await alert.presentAlert();
 }

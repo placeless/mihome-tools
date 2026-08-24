@@ -206,9 +206,10 @@ encrypted requests directly from an iPhone to Mi Home:
 Scriptable on iPhone → Mi Home cloud API
 ```
 
-It includes a one-file installer, Keychain-based setup, a confirmed feed
-action, feed-history display, Apple Shortcuts input/output, and a Home Screen
-widget. No always-on Mac or web server is required.
+It includes a one-file installer, Keychain-based setup, on-device Xiaomi login
+refresh, a confirmed feed action, feed-history display, Apple Shortcuts
+input/output, and a Home Screen widget. No always-on Mac or web server is
+required.
 
 The Xiaomi credentials are stored on the iPhone, so review the security notes
 and do not install untrusted Scriptable code.
@@ -222,6 +223,8 @@ The configured cloud session expired or was revoked:
 ```bash
 mihome-login
 ```
+
+For the Scriptable client, run `MiHomeLogin` on the iPhone instead.
 
 ### Missing or insecure environment file
 

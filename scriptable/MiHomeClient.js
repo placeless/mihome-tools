@@ -1,6 +1,11 @@
 const core = importModule("MiHomeCore");
 
 const CONFIG_KEY = "mihome-tools.config.v1";
+const XIAOMI_LOGIN_URL =
+  "https://account.xiaomi.com/longPolling/loginUrl";
+const XIAOMI_SERVICE_LOGIN_URL =
+  "https://account.xiaomi.com/pass/serviceLogin";
+const XIAOMI_LOGIN_USER_AGENT = "mihome-tools-scriptable";
 
 const DEFAULT_CONFIG = {
   region: "ES",
@@ -149,6 +154,242 @@ function hostFromUrl(url) {
     );
   }
   return host;
+}
+
+function loginHostFromUrl(url, kind) {
+  const match = /^https:\/\/([^/?#]+)(?:[/?#]|$)/i.exec(String(url || ""));
+  if (!match) {
+    throw new MiHomeError(`Xiaomi ${kind} URL must use HTTPS`);
+  }
+  const host = match[1].toLowerCase();
+  const accountHost =
+    host === "account.xiaomi.com" || host.endsWith(".account.xiaomi.com");
+  const serviceHost =
+    host === "api.io.mi.com" || host.endsWith(".api.io.mi.com");
+  if (host.includes("@") || host.includes(":")) {
+    throw new MiHomeError(`Xiaomi ${kind} URL has an invalid host`);
+  }
+  if (kind === "login" && !accountHost) {
+    throw new MiHomeError("Xiaomi login URL has an unexpected host");
+  }
+  if (kind === "service" && !serviceHost) {
+    throw new MiHomeError("Xiaomi service URL has an unexpected host");
+  }
+  return host;
+}
+
+function parseXiaomiJson(rawText) {
+  const text = String(rawText || "")
+    .trim()
+    .replace(/^&&&START&&&\s*/, "");
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    throw new MiHomeError("Xiaomi login returned an invalid response");
+  }
+}
+
+function responseCookies(response) {
+  const result = {};
+  for (const cookie of (response && response.cookies) || []) {
+    if (cookie && cookie.name && cookie.value !== undefined) {
+      result[String(cookie.name)] = String(cookie.value);
+    }
+  }
+  return result;
+}
+
+function cookieHeader(cookies) {
+  return Object.keys(cookies || {})
+    .filter((name) => /^[A-Za-z0-9_]+$/.test(name))
+    .map((name) => `${name}=${cookies[name]}`)
+    .join("; ");
+}
+
+function appendQuery(url, values) {
+  const separator = String(url).includes("?") ? "&" : "?";
+  return `${url}${separator}${core.formEncode(values)}`;
+}
+
+function normalizedLoginLocale(language) {
+  const parts = String(language || "en_US").split("_");
+  if (parts.length !== 2) {
+    return "en_US";
+  }
+  return `${parts[0].toLowerCase()}_${parts[1].toUpperCase()}`;
+}
+
+async function loadLoginResponse(
+  url,
+  kind,
+  cookies = {},
+  timeout = 20,
+  parseJson = true,
+) {
+  loginHostFromUrl(url, kind);
+  const request = new Request(url);
+  request.headers = {
+    accept: "application/json;charset=UTF-8",
+    "accept-language": "en-US,en;q=0.9",
+    "user-agent": XIAOMI_LOGIN_USER_AGENT,
+  };
+  const header = cookieHeader(cookies);
+  if (header) {
+    request.headers.cookie = header;
+  }
+  request.timeoutInterval = timeout;
+
+  let data;
+  try {
+    data = await request.load();
+  } catch (_error) {
+    throw new MiHomeError(`Xiaomi ${kind} request failed`);
+  }
+
+  const response = request.response || {};
+  const statusCode = Number(response.statusCode || 0);
+  if (statusCode >= 400) {
+    throw new MiHomeError(
+      `Xiaomi ${kind} request failed (HTTP ${statusCode})`,
+    );
+  }
+  const rawText = data && typeof data.toRawString === "function"
+    ? data.toRawString()
+    : "";
+  return {
+    data: parseJson ? parseXiaomiJson(rawText) : null,
+    cookies: responseCookies(response),
+  };
+}
+
+async function startXiaomiLogin(language = "en_US") {
+  const url = appendQuery(XIAOMI_LOGIN_URL, {
+    _qrsize: "480",
+    qs: "?sid=xiaomiio&_json=true",
+    callback: "https://sts.api.io.mi.com/sts",
+    _hasLogo: "false",
+    sid: "xiaomiio",
+    serviceParam: "",
+    _locale: normalizedLoginLocale(language),
+    _dc: String(Date.now()),
+  });
+  const response = await loadLoginResponse(url, "login");
+  if (
+    response.data.code !== 0 ||
+    !response.data.loginUrl ||
+    !response.data.lp
+  ) {
+    throw new MiHomeError("Could not start Xiaomi login");
+  }
+  loginHostFromUrl(response.data.loginUrl, "login");
+  loginHostFromUrl(response.data.lp, "login");
+  return {
+    loginUrl: response.data.loginUrl,
+    pollUrl: response.data.lp,
+  };
+}
+
+function loginCookies(data, cookies) {
+  const merged = Object.assign({}, cookies || {});
+  for (const name of ["deviceId", "passToken", "userId", "cUserId"]) {
+    if (data && data[name] !== undefined && data[name] !== null) {
+      merged[name] = String(data[name]);
+    }
+  }
+  return merged;
+}
+
+function serviceClientSign(nonce, ssecurity) {
+  return core.base64Encode(
+    core.sha1(core.utf8Encode(`nonce=${nonce}&${ssecurity}`)),
+  );
+}
+
+async function completeServiceLogin(location, cookies, clientSign = null) {
+  let url = String(location || "");
+  loginHostFromUrl(url, "service");
+  if (clientSign) {
+    url = appendQuery(url, { clientSign });
+  }
+  const response = await loadLoginResponse(
+    url,
+    "service",
+    cookies,
+    20,
+    false,
+  );
+  const serviceToken = response.cookies.serviceToken;
+  if (!serviceToken) {
+    throw new MiHomeError("Xiaomi login did not return a service token");
+  }
+  return serviceToken;
+}
+
+async function finishXiaomiLogin(login, expectedUserId = null) {
+  if (!login || !login.pollUrl) {
+    throw new MiHomeError("Xiaomi login session is missing");
+  }
+  const pollUrl = appendQuery(login.pollUrl, { _: String(Date.now()) });
+  const polled = await loadLoginResponse(pollUrl, "login");
+  let data = polled.data || {};
+  let cookies = loginCookies(data, polled.cookies);
+  let userId = data.userId || cookies.userId;
+
+  if (!userId) {
+    throw new MiHomeError(
+      "Xiaomi login was not completed. Open MiHomeLogin and try again.",
+    );
+  }
+  userId = String(userId);
+  if (expectedUserId && String(expectedUserId) !== userId) {
+    throw new MiHomeError(
+      "The signed-in Xiaomi account does not match the stored configuration.",
+    );
+  }
+
+  let ssecurity = data.ssecurity;
+  let location = data.location;
+  let clientSign = null;
+
+  if (!ssecurity || !location) {
+    if (!cookies.deviceId || !cookies.passToken) {
+      throw new MiHomeError("Xiaomi login did not return a complete session");
+    }
+    const serviceUrl = appendQuery(XIAOMI_SERVICE_LOGIN_URL, {
+      sid: "xiaomiio",
+      _json: "true",
+    });
+    const service = await loadLoginResponse(
+      serviceUrl,
+      "login",
+      cookies,
+    );
+    data = service.data || {};
+    cookies = Object.assign(cookies, service.cookies);
+    ssecurity = data.ssecurity;
+    location = data.location;
+    if (!data.nonce || !ssecurity || !location) {
+      throw new MiHomeError(
+        "Xiaomi login did not return a complete service session",
+      );
+    }
+    clientSign = serviceClientSign(data.nonce, ssecurity);
+  }
+
+  const serviceToken = await completeServiceLogin(
+    location,
+    cookies,
+    clientSign,
+  );
+  return {
+    ssecurity: String(ssecurity),
+    serviceToken,
+    yast: serviceToken,
+    userId,
+    passportDeviceId: String(
+      data.deviceId || cookies.deviceId || "",
+    ),
+  };
 }
 
 function buildHeaders(url, config) {
@@ -443,7 +684,7 @@ async function postJson(url, payload, config) {
         rawText.includes('"code":3'))
     ) {
       throw new MiHomeAuthenticationError(
-        "Mi Home session expired. Import a refreshed session with MiHomeSetup.",
+        "Mi Home session expired. Run MiHomeLogin to refresh it.",
       );
     }
     throw new MiHomeError(
@@ -553,6 +794,8 @@ module.exports = {
   normalizeConfig,
   postJson,
   saveConfig,
+  startXiaomiLogin,
+  finishXiaomiLogin,
   shortcutFeedPortions,
   stats,
   summarizeStatsResponse,

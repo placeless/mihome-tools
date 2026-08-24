@@ -67,6 +67,7 @@ class FakeRequest {
   static responseText = '{"code":0,"result":[]}';
   static responseFactory = null;
   static responseHeaders = { "Content-Type": "application/json" };
+  static responseCookies = [];
 
   constructor(url) {
     this.url = url;
@@ -78,6 +79,7 @@ class FakeRequest {
     this.response = {
       statusCode: FakeRequest.responseStatus,
       headers: FakeRequest.responseHeaders,
+      cookies: FakeRequest.responseCookies,
     };
     const text = FakeRequest.responseFactory
       ? FakeRequest.responseFactory(this)
@@ -186,8 +188,146 @@ test("401 auth error becomes an actionable authentication error", async () => {
     () => client.stats(1, 1, sampleConfig()),
     (error) =>
       error.name === "MiHomeAuthenticationError" &&
-      error.message.includes("MiHomeSetup"),
+      error.message.includes("MiHomeLogin"),
   );
+});
+
+test("on-device login exchanges a browser login for session values", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseHeaders = { "Content-Type": "application/json" };
+  FakeRequest.responseCookies = [];
+  FakeRequest.responseFactory = (request) => {
+    if (request.url.startsWith("https://account.xiaomi.com/longPolling/loginUrl")) {
+      return (
+        "&&&START&&&" +
+        JSON.stringify({
+          code: 0,
+          loginUrl: "https://eu.account.xiaomi.com/longPolling/login?ticket=test",
+          lp: "https://eu.lp.account.xiaomi.com/lp/s?k=test",
+        })
+      );
+    }
+    if (request.url.startsWith("https://eu.lp.account.xiaomi.com/lp/s")) {
+      return (
+        "&&&START&&&" +
+        JSON.stringify({
+          ssecurity: "c2VjdXJpdHk=",
+          userId: "user-id",
+          passToken: "pass-token",
+          deviceId: "new-passport-device",
+          location: "https://sts.api.io.mi.com/sts?d=test",
+        })
+      );
+    }
+    if (request.url.startsWith("https://sts.api.io.mi.com/sts")) {
+      request.response.cookies = [
+        { name: "serviceToken", value: "new-service-token" },
+      ];
+      return "service handoff";
+    }
+    throw new Error(`Unexpected request: ${request.url}`);
+  };
+
+  const login = await client.startXiaomiLogin("ZH_CN");
+  assert.match(login.loginUrl, /^https:\/\/eu\.account\.xiaomi\.com\//);
+  const startUrl = new URL(FakeRequest.instances[0].url);
+  assert.equal(startUrl.searchParams.get("_locale"), "zh_CN");
+
+  const session = await client.finishXiaomiLogin(login, "user-id");
+  assert.deepEqual(session, {
+    ssecurity: "c2VjdXJpdHk=",
+    serviceToken: "new-service-token",
+    yast: "new-service-token",
+    userId: "user-id",
+    passportDeviceId: "new-passport-device",
+  });
+  const handoff = FakeRequest.instances.at(-1);
+  assert.match(handoff.headers.cookie, /passToken=pass-token/);
+});
+
+test("on-device login supports the pinned migate service exchange", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseCookies = [];
+  FakeRequest.responseFactory = (request) => {
+    if (request.url.startsWith("https://eu.lp.account.xiaomi.com/lp/s")) {
+      request.response.cookies = [
+        { name: "deviceId", value: "passport-device" },
+        { name: "passToken", value: "pass-token" },
+        { name: "userId", value: "user-id" },
+      ];
+      return '&&&START&&&{"code":0,"result":"ok"}';
+    }
+    if (request.url.startsWith("https://account.xiaomi.com/pass/serviceLogin")) {
+      assert.match(request.headers.cookie, /passToken=pass-token/);
+      return (
+        "&&&START&&&" +
+        JSON.stringify({
+          nonce: "nonce-value",
+          ssecurity: "c2VjdXJpdHk=",
+          location: "https://sts.api.io.mi.com/sts?d=test",
+        })
+      );
+    }
+    if (request.url.startsWith("https://sts.api.io.mi.com/sts")) {
+      assert.ok(new URL(request.url).searchParams.get("clientSign"));
+      request.response.cookies = [
+        { name: "serviceToken", value: "fallback-service-token" },
+      ];
+      return "service handoff";
+    }
+    throw new Error(`Unexpected request: ${request.url}`);
+  };
+
+  const session = await client.finishXiaomiLogin(
+    { pollUrl: "https://eu.lp.account.xiaomi.com/lp/s?k=test" },
+    "user-id",
+  );
+
+  assert.equal(session.ssecurity, "c2VjdXJpdHk=");
+  assert.equal(session.serviceToken, "fallback-service-token");
+  assert.equal(session.passportDeviceId, "passport-device");
+});
+
+test("on-device login rejects a different Xiaomi account before handoff", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseCookies = [];
+  FakeRequest.responseFactory = () =>
+    "&&&START&&&" +
+    JSON.stringify({
+      ssecurity: "c2VjdXJpdHk=",
+      userId: "other-user",
+      location: "https://sts.api.io.mi.com/sts?d=test",
+    });
+
+  await assert.rejects(
+    () =>
+      client.finishXiaomiLogin(
+        { pollUrl: "https://eu.lp.account.xiaomi.com/lp/s?k=test" },
+        "user-id",
+      ),
+    /does not match/,
+  );
+  assert.equal(FakeRequest.instances.length, 1);
+});
+
+test("on-device login rejects server-provided non-Xiaomi URLs", async () => {
+  FakeRequest.instances.length = 0;
+  FakeRequest.responseStatus = 200;
+  FakeRequest.responseCookies = [];
+  FakeRequest.responseFactory = () =>
+    "&&&START&&&" +
+    JSON.stringify({
+      code: 0,
+      loginUrl: "https://example.com/login",
+      lp: "https://eu.lp.account.xiaomi.com/lp/s?k=test",
+    });
+
+  await assert.rejects(
+    () => client.startXiaomiLogin(),
+    /unexpected host/,
+  );
+  assert.equal(FakeRequest.instances.length, 1);
 });
 
 test("requests reject non-HTTPS and non-Xiaomi endpoints", async () => {
