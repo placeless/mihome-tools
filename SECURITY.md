@@ -22,5 +22,9 @@ information.
 - The optional Scriptable client stores Xiaomi credentials in Scriptable
   Keychain on the iPhone. Any untrusted Scriptable code may attempt to read the
   same entry, so only install scripts you have reviewed.
-- Scriptable cloud requests are restricted to HTTPS endpoints under Xiaomi's
-  `api.io.mi.com` domain.
+- `MiHomeLogin` collects the Xiaomi password and any account verification only
+  inside Xiaomi's HTTPS account page. The script receives session values, not
+  the password, and saves them only after an API verification succeeds.
+- Scriptable Mi Home API requests are restricted to HTTPS endpoints under
+  Xiaomi's `api.io.mi.com` domain. Login starts and polls only HTTPS Xiaomi
+  account hosts, and accepts service handoff URLs only under `api.io.mi.com`.

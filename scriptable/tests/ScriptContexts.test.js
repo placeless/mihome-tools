@@ -157,3 +157,100 @@ test("unconfirmed Shortcut feeding is rejected before the request", async () => 
   assert.equal(output.shortcut.ok, false);
   assert.match(output.shortcut.error, /confirmed/);
 });
+
+test("interactive login verifies before replacing the stored session", async () => {
+  const source = fs.readFileSync(
+    path.join(scriptDirectory, "MiHomeLogin.js"),
+    "utf8",
+  );
+  const events = [];
+  const existing = {
+    userId: "user-id",
+    language: "ZH_CN",
+    did: "device-did",
+    passportDeviceId: "old-passport-device",
+  };
+  const refreshedSession = {
+    userId: "user-id",
+    ssecurity: "new-security",
+    serviceToken: "new-token",
+    yast: "new-token",
+    passportDeviceId: "new-passport-device",
+  };
+  let saved = null;
+  const client = {
+    loadConfig: () => existing,
+    startXiaomiLogin: async (language) => {
+      assert.equal(language, "ZH_CN");
+      events.push("start");
+      return { loginUrl: "https://account.xiaomi.com/login", pollUrl: "poll" };
+    },
+    finishXiaomiLogin: async (login, expectedUserId) => {
+      assert.equal(login.pollUrl, "poll");
+      assert.equal(expectedUserId, "user-id");
+      events.push("finish");
+      return refreshedSession;
+    },
+    normalizeConfig: (value) => value,
+    stats: async (_days, _limit, configValue) => {
+      assert.equal(configValue.did, "device-did");
+      assert.equal(configValue.serviceToken, "new-token");
+      events.push("verify");
+      return { code: 0, result: [] };
+    },
+    saveConfig: (value) => {
+      events.push("save");
+      saved = value;
+    },
+  };
+  class FakeAlert {
+    addAction() {}
+
+    addCancelAction() {}
+
+    async presentAlert() {
+      return 0;
+    }
+  }
+  class FakeWebView {
+    async loadURL(url) {
+      assert.equal(url, "https://account.xiaomi.com/login");
+      events.push("load");
+    }
+
+    async present(fullscreen) {
+      assert.equal(fullscreen, true);
+      events.push("present");
+    }
+  }
+  let completed = false;
+  const execute = new AsyncFunction(
+    "importModule",
+    "Alert",
+    "WebView",
+    "Script",
+    source,
+  );
+
+  await execute(
+    (name) => {
+      assert.equal(name, "MiHomeClient");
+      return client;
+    },
+    FakeAlert,
+    FakeWebView,
+    { complete: () => (completed = true) },
+  );
+
+  assert.equal(completed, true);
+  assert.deepEqual(events, [
+    "start",
+    "load",
+    "present",
+    "finish",
+    "verify",
+    "save",
+  ]);
+  assert.equal(saved.did, "device-did");
+  assert.equal(saved.passportDeviceId, "new-passport-device");
+});
