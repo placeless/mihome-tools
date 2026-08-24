@@ -286,6 +286,9 @@ async function startXiaomiLogin(language = "en_US") {
   return {
     loginUrl: response.data.loginUrl,
     pollUrl: response.data.lp,
+    timeout: Number(response.data.timeout) > 0
+      ? Math.min(Number(response.data.timeout), 300)
+      : 300,
   };
 }
 
@@ -330,7 +333,15 @@ async function finishXiaomiLogin(login, expectedUserId = null) {
     throw new MiHomeError("Xiaomi login session is missing");
   }
   const pollUrl = appendQuery(login.pollUrl, { _: String(Date.now()) });
-  const polled = await loadLoginResponse(pollUrl, "login");
+  const pollTimeout = Number(login.timeout) > 0
+    ? Math.min(Number(login.timeout), 300)
+    : 300;
+  const polled = await loadLoginResponse(
+    pollUrl,
+    "login",
+    {},
+    pollTimeout,
+  );
   let data = polled.data || {};
   let cookies = loginCookies(data, polled.cookies);
   let userId = data.userId || cookies.userId;

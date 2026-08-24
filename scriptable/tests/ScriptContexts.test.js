@@ -178,18 +178,25 @@ test("interactive login verifies before replacing the stored session", async () 
     passportDeviceId: "new-passport-device",
   };
   let saved = null;
+  let resolveLogin;
   const client = {
     loadConfig: () => existing,
     startXiaomiLogin: async (language) => {
       assert.equal(language, "ZH_CN");
       events.push("start");
-      return { loginUrl: "https://account.xiaomi.com/login", pollUrl: "poll" };
+      return {
+        loginUrl: "https://account.xiaomi.com/login",
+        pollUrl: "poll",
+        timeout: 300,
+      };
     },
     finishXiaomiLogin: async (login, expectedUserId) => {
       assert.equal(login.pollUrl, "poll");
       assert.equal(expectedUserId, "user-id");
-      events.push("finish");
-      return refreshedSession;
+      events.push("poll");
+      return new Promise((resolve) => {
+        resolveLogin = () => resolve(refreshedSession);
+      });
     },
     normalizeConfig: (value) => value,
     stats: async (_days, _limit, configValue) => {
@@ -212,22 +219,19 @@ test("interactive login verifies before replacing the stored session", async () 
       return 0;
     }
   }
-  class FakeWebView {
-    async loadURL(url) {
+  const Safari = {
+    openInApp: async (url, fullscreen) => {
       assert.equal(url, "https://account.xiaomi.com/login");
-      events.push("load");
-    }
-
-    async present(fullscreen) {
       assert.equal(fullscreen, true);
-      events.push("present");
-    }
-  }
+      events.push("safari");
+      resolveLogin();
+    },
+  };
   let completed = false;
   const execute = new AsyncFunction(
     "importModule",
     "Alert",
-    "WebView",
+    "Safari",
     "Script",
     source,
   );
@@ -238,16 +242,15 @@ test("interactive login verifies before replacing the stored session", async () 
       return client;
     },
     FakeAlert,
-    FakeWebView,
+    Safari,
     { complete: () => (completed = true) },
   );
 
   assert.equal(completed, true);
   assert.deepEqual(events, [
     "start",
-    "load",
-    "present",
-    "finish",
+    "poll",
+    "safari",
     "verify",
     "save",
   ]);
